@@ -1,0 +1,14 @@
+{
+  "name": "nvidia-network-health-check-platform",
+  "version": "1.0.0",
+  "description": "NVIDIA InfiniBand Network Health Check Platform",
+  "scripts": {
+    "server": "concurrently \"npm run backend\" \"npm run frontend\"",
+    "backend": "cd backend && python -m uvicorn main:app --reload --port 8000",
+    "frontend": "cd frontend && npm run dev",
+    "install:all": "cd frontend && npm install && cd ../backend && pip install -r requirements.txt"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
