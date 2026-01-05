@@ -6,17 +6,12 @@ import tarfile
 import pandas as pd
 import uuid
 from pathlib import Path
-import json
 import logging
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any
-import mimetypes
 
-from ib_analysis.config import get_config
-from ib_analysis.core.operations import OperationManager
-from ib_analysis.health_score import calculate_health_score, health_report_to_dict
+from services.analysis_service import AnalysisService
 
 # Configure logging
 logging.basicConfig(
@@ -36,9 +31,8 @@ MAX_UPLOAD_AGE_HOURS = 24  # Auto-cleanup after 24 hours
 ALLOWED_ARCHIVE_TYPES = {'.zip', '.tar.gz', '.tgz'}
 ALLOWED_CSV_TYPES = {'.csv'}
 
-# Initialize OperationManager
-config = get_config()
-op_manager = OperationManager(config)
+# Initialize analysis service
+analysis_service = AnalysisService()
 
 # Thread pool for parallel execution
 executor = ThreadPoolExecutor(max_workers=4)
@@ -150,47 +144,21 @@ def safe_extract_archive(file_path: Path, extract_dir: Path) -> None:
         raise HTTPException(status_code=400, detail="Unsupported archive format")
 
 
-def run_analysis(operation: str, target_dir: Path, output_file: Path, output_format: str = "json", lines: int = 50):
-    """Run ib_analysis operation and return result."""
-    try:
-        logger.info(f"Running {operation} analysis on {target_dir}")
-        result = op_manager.execute(
-            operation=operation,
-            dir_a=target_dir,
-            output_format=output_format,
-            output_file=output_file,
-            lines=lines,
-        )
-        logger.info(f"Completed {operation} analysis")
-        return result
-    except Exception as e:
-        logger.error(f"Analysis {operation} failed: {e}", exc_info=True)
-        raise
-
-
-def load_json_file(file_path: Path) -> list:
-    """Safely load JSON file with error handling."""
-    if not file_path.exists():
-        logger.warning(f"File not found: {file_path}")
-        return []
-
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            return data if isinstance(data, list) else []
-    except json.JSONDecodeError as e:
-        logger.error(f"JSON decode error in {file_path}: {e}")
-        return []
-    except Exception as e:
-        logger.error(f"Failed to read {file_path}: {e}")
-        return []
-
-
-@router.post("/upload/ibdiagnet")
+@router.post("/upload/ibdiagnet", tags=["upload"])
 async def upload_ibdiagnet(file: UploadFile = File(...)):
     """
     Upload and analyze IBDiagnet archive with parallel processing.
+
+    Accepts .zip or .tar.gz archives from IBDiagnet tool.
     Includes security validation, automatic cleanup, and comprehensive error handling.
+
+    Returns comprehensive analysis including:
+    - Health score (0-100)
+    - Network topology visualization
+    - Cable/optical module diagnostics
+    - BER (Bit Error Rate) analysis
+    - Congestion analysis
+    - HCA/firmware information
     """
     # Trigger cleanup of old uploads
     cleanup_count = cleanup_old_uploads()
@@ -231,98 +199,23 @@ async def upload_ibdiagnet(file: UploadFile = File(...)):
         validate_path_safety(extract_dir, target_dir)
         logger.info(f"Found IBDiagnet data at: {target_dir}")
 
-        # Define output files
-        output_file = task_dir / "analysis_result.json"
-        cable_file = task_dir / "cable.json"
-        xmit_file = task_dir / "xmit.json"
-        ber_file = task_dir / "ber.json"
-        hca_file = task_dir / "hca.json"
-        topo_file = task_dir / "network.html"
+        analysis_service.load_dataset(target_dir)
 
-        # Run analyses in parallel (brief must run first, others can be parallel)
-        logger.info("Starting brief analysis...")
         loop = asyncio.get_event_loop()
-        brief_result = await loop.run_in_executor(
-            executor,
-            run_analysis,
-            "brief",
-            target_dir,
-            output_file,
-            "json"
+        payload = await analysis_service.analyze_ibdiagnet(
+            target_dir=target_dir,
+            task_dir=task_dir,
+            task_id=task_id,
+            executor=executor,
+            loop=loop,
         )
-
-        # Run independent analyses in parallel
-        logger.info("Starting parallel analyses (cable, xmit, ber, hca)...")
-        parallel_tasks = [
-            loop.run_in_executor(executor, run_analysis, "cable", target_dir, cable_file, "json"),
-            loop.run_in_executor(executor, run_analysis, "xmit", target_dir, xmit_file, "json"),
-            loop.run_in_executor(executor, run_analysis, "ber", target_dir, ber_file, "json"),
-            loop.run_in_executor(executor, run_analysis, "hca", target_dir, hca_file, "json"),
-        ]
-
-        await asyncio.gather(*parallel_tasks, return_exceptions=True)
-        logger.info("All analyses completed")
-
-        # Load results with proper error handling
-        analysis_data = load_json_file(output_file)
-        cable_data = load_json_file(cable_file)
-        xmit_data = load_json_file(xmit_file)
-        ber_data = load_json_file(ber_file)
-        hca_data = load_json_file(hca_file)
-
-        # Calculate health score
-        logger.info("Calculating health score...")
-        health_report = calculate_health_score(
-            analysis_data=analysis_data,
-            cable_data=cable_data,
-            xmit_data=xmit_data,
-            ber_data=ber_data,
-            hca_data=hca_data,
-        )
-
-        # Convert issues for topology visualization
-        issues_dict = [
-            {
-                'severity': issue.severity.value,
-                'category': issue.category,
-                'description': issue.description,
-                'node_guid': issue.node_guid,
-                'port_number': issue.port_number,
-                'weight': issue.weight,
-                'details': issue.details,
-            }
-            for issue in health_report.issues
-        ]
-
-        # Generate topology visualization
-        logger.info("Generating topology visualization...")
-        await loop.run_in_executor(
-            executor,
-            lambda: op_manager.execute(
-                operation="topo",
-                dir_a=target_dir,
-                output_format="html",
-                output_file=topo_file,
-                issues=issues_dict
-            )
-        )
-
-        topo_url = f"/uploads/{task_id}/network.html" if topo_file.exists() else None
 
         logger.info(f"Analysis complete for task {task_id}")
 
         return {
             "status": "success",
             "task_id": task_id,
-            "health": health_report_to_dict(health_report),
-            "data": analysis_data,
-            "cable_data": cable_data,
-            "xmit_data": xmit_data,
-            "ber_data": ber_data,
-            "hca_data": hca_data,
-            "topo_url": topo_url,
-            "debug_stdout": "\n".join(brief_result.output_messages) if brief_result.output_messages else "",
-            "debug_stderr": brief_result.error_message or ""
+            **payload,
         }
 
     except HTTPException:
@@ -340,10 +233,15 @@ async def upload_ibdiagnet(file: UploadFile = File(...)):
             except Exception as e:
                 logger.warning(f"Failed to cleanup archive: {e}")
 
-@router.post("/upload/ufm-csv")
+@router.post("/upload/ufm-csv", tags=["upload"])
 async def upload_ufm_csv(file: UploadFile = File(...)):
     """
     Upload and parse UFM CSV file with chunked reading for large files.
+
+    Accepts CSV files exported from UFM REST API.
+    Uses chunked reading for efficient processing of large files.
+
+    Returns parsed CSV data as JSON array.
     """
     # Trigger cleanup
     cleanup_count = cleanup_old_uploads()

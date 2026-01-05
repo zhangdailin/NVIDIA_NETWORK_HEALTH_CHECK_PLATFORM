@@ -3,10 +3,15 @@
   "version": "1.0.0",
   "description": "NVIDIA InfiniBand Network Health Check Platform",
   "scripts": {
+    "dev": "concurrently \"npm run backend\" \"npm run frontend\"",
     "server": "concurrently \"npm run backend\" \"npm run frontend\"",
     "backend": "cd backend && python -m uvicorn main:app --reload --port 8000",
     "frontend": "cd frontend && npm run dev",
-    "install:all": "cd frontend && npm install && cd ../backend && pip install -r requirements.txt"
+    "build": "cd frontend && npm run build",
+    "start": "cd backend && python -m uvicorn main:app --host 0.0.0.0 --port 8000",
+    "install:all": "npm install && cd frontend && npm install && cd ../backend && pip install -r requirements.txt",
+    "install:frontend": "cd frontend && npm install",
+    "install:backend": "cd backend && pip install -r requirements.txt"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

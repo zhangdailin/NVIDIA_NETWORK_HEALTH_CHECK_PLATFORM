@@ -1,0 +1,20 @@
+{
+  "metadata": {
+    "description": "Recommended firmware/PSID pairs gathered from NVIDIA release notes. Update this list to match your fleet.",
+    "last_updated": "2024-12-01"
+  },
+  "policies": [
+    {
+      "device_type": "ConnectX-7",
+      "allowed_psids": ["MT_0000000009", "MT_000000000A"],
+      "min_fw": "28.30.1002",
+      "notes": "NDR leaf/spine default PSIDs for liquid-cooled CX7 adapters."
+    },
+    {
+      "device_type": "ConnectX-6",
+      "allowed_psids": ["MT_0000000008"],
+      "min_fw": "20.35.1010",
+      "notes": "HDR HCAs deployed in most UFM-managed clusters."
+    }
+  ]
+}

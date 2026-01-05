@@ -16,7 +16,13 @@
       "Bash(python -c:*)",
       "Bash(npm run build)",
       "Bash(python:*)",
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "Bash(del \"D:\\\\Github Code HUB\\\\AI知识助手\\\\NVIDIA_NETWORK_HEALTH_CHECK_PLATFORM\\\\backend\\\\ib_analysis\\\\cli.py\")",
+      "Bash(del \"D:\\\\Github Code HUB\\\\AI知识助手\\\\NVIDIA_NETWORK_HEALTH_CHECK_PLATFORM\\\\backend\\\\ib_analysis\\\\__main__.py\")",
+      "Bash(powershell -Command \"Remove-Item ''D:\\\\Github Code HUB\\\\AI知识助手\\\\NVIDIA_NETWORK_HEALTH_CHECK_PLATFORM\\\\backend\\\\ib_analysis\\\\cli.py'', ''D:\\\\Github Code HUB\\\\AI知识助手\\\\NVIDIA_NETWORK_HEALTH_CHECK_PLATFORM\\\\backend\\\\ib_analysis\\\\__main__.py'' -Force; Write-Host ''CLI files deleted''\")",
+      "Bash(powershell -Command:*)",
+      "Bash(git checkout:*)",
+      "Bash(findstr:*)"
     ]
   }
 }
