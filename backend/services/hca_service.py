@@ -64,7 +64,7 @@ class HcaService:
         df["FWInfo_Extended_Major"] = df["FWInfo_Extended_Major"].apply(lambda x: int(x, 16))
         df["FWInfo_Extended_Minor"] = df["FWInfo_Extended_Minor"].apply(lambda x: int(x, 16))
         df["FWInfo_Extended_SubMinor"] = df["FWInfo_Extended_SubMinor"].apply(lambda x: int(x, 16))
-        df["Up Time"] = df["HWInfo_UpTime"].apply(lambda x: str(timedelta(seconds=int(x, 16))))
+        df["Up Time"] = df["HWInfo_UpTime"].apply(self._safe_uptime)
         df["FW"] = (
             df["FWInfo_Extended_Major"].astype(str)
             + "."
@@ -96,6 +96,16 @@ class HcaService:
         df = df[existing].copy()
         self._df = df
         return df
+
+    @staticmethod
+    def _safe_uptime(value: object) -> str:
+        if pd.isna(value) or value is None:
+            return "N/A"
+        try:
+            seconds = int(str(value), 16)
+            return str(timedelta(seconds=seconds))
+        except (ValueError, TypeError):
+            return "N/A"
 
     def _find_db_csv(self) -> Path:
         matches = sorted(self.dataset_root.glob("*.db_csv"))
