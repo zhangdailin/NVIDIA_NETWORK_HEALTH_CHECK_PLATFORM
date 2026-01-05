@@ -1,0 +1,50 @@
+# Git
+.git
+.gitignore
+
+# Node
+node_modules
+npm-debug.log
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.venv
+venv
+env
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Build outputs
+dist
+build
+*.egg-info
+
+# Uploads and results (mounted as volumes)
+uploads/*
+results/*
+
+# Documentation
+*.md
+!README.md
+doc/
+
+# Tests
+test_data/
+*_test.py
+test_*.py
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# OS files
+.DS_Store
+Thumbs.db
