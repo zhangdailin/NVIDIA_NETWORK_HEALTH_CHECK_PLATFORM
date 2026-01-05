@@ -81,14 +81,14 @@ npm run dev
 ```
 NVIDIA_NETWORK_HEALTH_CHECK_PLATFORM/
 ├── backend/                    # FastAPI backend
-│   ├── ib_analysis/           # Integrated analysis engine
-│   │   ├── core/              # Operation management
-│   │   ├── graph.py           # Network topology
+│   ├── services/              # Analysis services
+│   │   ├── analysis_service.py # Orchestrator
+│   │   ├── topology_service.py # Network topology
 │   │   ├── health_score.py    # Health scoring system
-│   │   ├── xmit.py            # Transmission analysis
-│   │   ├── ber.py             # Bit Error Rate analysis
-│   │   ├── cable.py           # Cable diagnostics
-│   │   └── hca.py             # HCA/firmware analysis
+│   │   ├── xmit_service.py    # Transmission analysis
+│   │   ├── ber_service.py     # Bit Error Rate analysis
+│   │   ├── cable_service.py   # Cable diagnostics
+│   │   └── hca_service.py     # HCA/firmware analysis
 │   ├── api.py                 # FastAPI routes
 │   ├── main.py                # Application entry point
 │   └── requirements.txt       # Python dependencies

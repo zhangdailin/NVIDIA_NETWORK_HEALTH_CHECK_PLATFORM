@@ -29,6 +29,7 @@ from .cable_service import CableService
 from .fan_service import FanService
 from .hca_service import HcaService
 from .histogram_service import HistogramService
+from .ibdiagnet import read_index_table, read_table
 from .topology_checker import TopologyChecker
 from .topology_diff_service import TopologyDiffService
 from .topology_service import TopologyService

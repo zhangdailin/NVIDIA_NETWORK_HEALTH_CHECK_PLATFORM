@@ -58,12 +58,12 @@ npm run lint     # ESLint
 **Frontend** (`frontend/`): React 19 SPA with Vite. Single main component (`src/App.jsx`) handles file uploads and displays tabbed analysis results. Communicates with backend at `http://localhost:8000/api`.
 
 **Backend** (`backend/`): FastAPI server with two main endpoints:
-- `POST /api/upload/ibdiagnet` - Accepts .zip/.tar.gz archives, extracts them, runs analysis via integrated `ib_analysis` module
+- `POST /api/upload/ibdiagnet` - Accepts .zip/.tar.gz archives, extracts them, runs analysis via `services` module
 - `POST /api/upload/ufm-csv` - Parses CSV files with pandas
 
-**ib_analysis Module** (`backend/ib_analysis/`): Integrated analysis library using `OperationManager` for executing operations. Key classes:
-- `OperationManager` - Orchestrates analysis operations
-- `Graph` - Network topology
-- `Xmit`, `Ber`, `CableManager`, `HcaManager` - Specialized analyzers
+**Analysis Services** (`backend/services/`): Core analysis logic. Key classes:
+- `AnalysisService` - Orchestrates analysis operations
+- `TopologyService` - Network topology visualization
+- `XmitService`, `BerService`, `CableService`, `HcaService` - Specialized analyzers
 
 **File Storage**: Uploads stored in `uploads/` with UUID-based task directories. Generated HTML topology maps served as static files.
