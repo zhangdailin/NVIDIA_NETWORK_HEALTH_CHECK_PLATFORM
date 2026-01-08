@@ -58,6 +58,7 @@ class PortHealthService:
         counters_df = self._try_read_table("PORT_GENERAL_COUNTERS")
         ext_info_df = self._try_read_table("EXTENDED_PORT_INFO")
         fec_df = self._try_read_table("FEC_MODE")
+        pm_delta_df = self._try_read_table("PM_DELTA")
 
         if counters_df.empty and ext_info_df.empty:
             return PortHealthResult()
@@ -94,6 +95,20 @@ class PortHealthService:
                     "NDRFECEnabled": self._hex_to_bool(row.get("NDRFECEn")),
                 }
 
+        pm_delta_lookup = {}
+        if not pm_delta_df.empty:
+            for _, row in pm_delta_df.iterrows():
+                try:
+                    key = (str(row.get("NodeGUID", "")), int(row.get("PortNumber", 0)))
+                except (TypeError, ValueError):
+                    continue
+                link_down = self._safe_int(row.get("LinkDownedCounter")) + self._safe_int(row.get("LinkDownedCounterExt"))
+                link_recovery = self._safe_int(row.get("LinkErrorRecoveryCounter")) + self._safe_int(row.get("LinkErrorRecoveryCounterExt"))
+                if key not in pm_delta_lookup:
+                    pm_delta_lookup[key] = {"link_down": 0, "link_recovery": 0}
+                pm_delta_lookup[key]["link_down"] += link_down
+                pm_delta_lookup[key]["link_recovery"] += link_recovery
+
         # Process PORT_GENERAL_COUNTERS as primary source
         if not counters_df.empty:
             for _, row in counters_df.iterrows():
@@ -113,6 +128,10 @@ class PortHealthService:
                 ext_info = ext_info_lookup.get(key, {})
                 fec_info = fec_lookup.get(key, {})
 
+                pm_metrics = pm_delta_lookup.get(key, {})
+                link_down_events = pm_metrics.get("link_down", 0)
+                link_recovery_events = pm_metrics.get("link_recovery", 0)
+
                 # Determine severity
                 severity = "normal"
                 issues = []
@@ -121,6 +140,14 @@ class PortHealthService:
                 if unhealthy_reason > 0:
                     severity = "critical"
                     issues.append(f"Unhealthy: {ext_info.get('UnhealthyReasonText', 'Unknown')}")
+
+                if link_down_events > 0:
+                    severity = "critical"
+                    issues.append(f"Link down events: {link_down_events}")
+
+                if link_recovery_events > 0 and severity != "critical":
+                    severity = "warning"
+                    issues.append(f"Link recovery events: {link_recovery_events}")
 
                 if rx_icrc_error > 0:
                     if severity != "critical":
@@ -154,6 +181,9 @@ class PortHealthService:
                     "FECMode": fec_info.get("FECActiveName", "Unknown"),
                     "HDRFECEnabled": fec_info.get("HDRFECEnabled", False),
                     "NDRFECEnabled": fec_info.get("NDRFECEnabled", False),
+                    # Link health
+                    "LinkDownEvents": link_down_events,
+                    "LinkRecoveryEvents": link_recovery_events,
                     # Status
                     "Severity": severity,
                     "Issues": "; ".join(issues) if issues else "",
@@ -181,6 +211,13 @@ class PortHealthService:
                         "PortNumber": port_number,
                         IBH_ANOMALY_AGG_COL: str(AnomlyType.IBH_PORT_ICRC_ERROR),
                         IBH_ANOMALY_AGG_WEIGHT: 0.5,
+                    })
+                if link_down_events > 0:
+                    anomaly_rows.append({
+                        "NodeGUID": node_guid,
+                        "PortNumber": port_number,
+                        IBH_ANOMALY_AGG_COL: str(AnomlyType.IBH_LINK_ASYMMETRIC),
+                        IBH_ANOMALY_AGG_WEIGHT: min(1.0, link_down_events / 5.0),
                     })
 
         # Build anomaly DataFrame
@@ -224,6 +261,8 @@ class PortHealthService:
 
         icrc_errors = sum(r.get("RxICRCErrors", 0) for r in records)
         parity_errors = sum(r.get("TxParityErrors", 0) for r in records)
+        link_down_events = sum(r.get("LinkDownEvents", 0) for r in records)
+        link_recovery_events = sum(r.get("LinkRecoveryEvents", 0) for r in records)
         unhealthy_count = sum(1 for r in records if r.get("UnhealthyReason", 0) > 0)
 
         # FEC mode distribution
@@ -236,6 +275,8 @@ class PortHealthService:
             "total_ports": len(records),
             "total_icrc_errors": icrc_errors,
             "total_parity_errors": parity_errors,
+            "total_link_down_events": link_down_events,
+            "total_link_recovery_events": link_recovery_events,
             "unhealthy_ports": unhealthy_count,
             "ports_with_errors": sum(1 for r in records if r.get("RxICRCErrors", 0) > 0 or r.get("TxParityErrors", 0) > 0),
             "fec_mode_distribution": fec_modes,

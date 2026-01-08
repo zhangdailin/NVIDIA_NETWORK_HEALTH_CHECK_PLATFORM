@@ -12,7 +12,7 @@ import os
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from .health_score import calculate_health_score, health_report_to_dict
 
@@ -70,7 +70,7 @@ from .xmit_service import XmitService
 
 logger = logging.getLogger(__name__)
 
-MAX_PREVIEW_ROWS = 2000
+MAX_PREVIEW_ROWS: Optional[int] = None
 
 @dataclass
 class IbdiagnetDataset:
@@ -517,6 +517,119 @@ class AnalysisService:
         ]
         extra_sources = [(name, rows) for name, rows in extra_sources if rows]
 
+        anomaly_sources = {
+            "cable": cable_anomalies,
+            "xmit": xmit_anomalies,
+            "ber": ber_anomalies,
+            "hca": hca_anomalies,
+            "fan": fan_anomalies,
+            "histogram": histogram_anomalies,
+            "temperature": temperature_anomalies,
+            "power": power_anomalies,
+            "routing": routing_anomalies,
+            "port_health": port_health_anomalies,
+            "links": links_anomalies,
+            "qos": qos_anomalies,
+            "mlnx_counters": mlnx_counters_anomalies,
+            "pm_delta": pm_delta_anomalies,
+            "pci_performance": pci_performance_anomalies,
+        }
+        anomaly_index_map = {
+            name: self._build_anomaly_index(rows)
+            for name, rows in anomaly_sources.items()
+            if rows
+        }
+        analysis_index: Set[Tuple[str, Optional[int]]] = set()
+        for key in ("cable", "xmit", "ber", "hca"):
+            analysis_index.update(anomaly_index_map.get(key, set()))
+        if analysis_index:
+            anomaly_index_map["analysis"] = analysis_index
+
+        datasets = {
+            "analysis": analysis_rows,
+            "cable": cable_rows,
+            "xmit": xmit_rows,
+            "ber": ber_rows,
+            "hca": hca_rows,
+            "fan": fan_rows,
+            "histogram": histogram_rows,
+            "temperature": temperature_rows,
+            "power": power_rows,
+            "switch": switch_rows,
+            "routing": routing_rows,
+            "port_health": port_health_rows,
+            "links": links_rows,
+            "qos": qos_rows,
+            "sm_info": sm_info_rows,
+            "port_hierarchy": port_hierarchy_rows,
+            "mlnx_counters": mlnx_counters_rows,
+            "pm_delta": pm_delta_rows,
+            "vports": vports_rows,
+            "pkey": pkey_rows,
+            "system_info": system_info_rows,
+            "extended_port_info": extended_port_info_rows,
+            "ar_info": ar_info_rows,
+            "sharp": sharp_rows,
+            "fec_mode": fec_mode_rows,
+            "phy_diagnostics": phy_diagnostics_rows,
+            "neighbors": neighbors_rows,
+            "buffer_histogram": buffer_histogram_rows,
+            "extended_node_info": extended_node_info_rows,
+            "extended_switch_info": extended_switch_info_rows,
+            "power_sensors": power_sensors_rows,
+            "routing_config": routing_config_rows,
+            "temp_alerts": temp_alerts_rows,
+            "credit_watchdog": credit_watchdog_rows,
+            "pci_performance": pci_performance_rows,
+            "ber_advanced": ber_advanced_rows,
+            "cable_enhanced": cable_enhanced_rows,
+            "per_lane_performance": per_lane_performance_rows,
+            "n2n_security": n2n_security_rows,
+        }
+        filtered_datasets = {
+            name: self._filter_anomalies(name, rows, anomaly_index_map.get(name))
+            for name, rows in datasets.items()
+        }
+        analysis_rows = filtered_datasets["analysis"]
+        cable_rows = filtered_datasets["cable"]
+        xmit_rows = filtered_datasets["xmit"]
+        ber_rows = filtered_datasets["ber"]
+        hca_rows = filtered_datasets["hca"]
+        fan_rows = filtered_datasets["fan"]
+        histogram_rows = filtered_datasets["histogram"]
+        temperature_rows = filtered_datasets["temperature"]
+        power_rows = filtered_datasets["power"]
+        switch_rows = filtered_datasets["switch"]
+        routing_rows = filtered_datasets["routing"]
+        port_health_rows = filtered_datasets["port_health"]
+        links_rows = filtered_datasets["links"]
+        qos_rows = filtered_datasets["qos"]
+        sm_info_rows = filtered_datasets["sm_info"]
+        port_hierarchy_rows = filtered_datasets["port_hierarchy"]
+        mlnx_counters_rows = filtered_datasets["mlnx_counters"]
+        pm_delta_rows = filtered_datasets["pm_delta"]
+        vports_rows = filtered_datasets["vports"]
+        pkey_rows = filtered_datasets["pkey"]
+        system_info_rows = filtered_datasets["system_info"]
+        extended_port_info_rows = filtered_datasets["extended_port_info"]
+        ar_info_rows = filtered_datasets["ar_info"]
+        sharp_rows = filtered_datasets["sharp"]
+        fec_mode_rows = filtered_datasets["fec_mode"]
+        phy_diagnostics_rows = filtered_datasets["phy_diagnostics"]
+        neighbors_rows = filtered_datasets["neighbors"]
+        buffer_histogram_rows = filtered_datasets["buffer_histogram"]
+        extended_node_info_rows = filtered_datasets["extended_node_info"]
+        extended_switch_info_rows = filtered_datasets["extended_switch_info"]
+        power_sensors_rows = filtered_datasets["power_sensors"]
+        routing_config_rows = filtered_datasets["routing_config"]
+        temp_alerts_rows = filtered_datasets["temp_alerts"]
+        credit_watchdog_rows = filtered_datasets["credit_watchdog"]
+        pci_performance_rows = filtered_datasets["pci_performance"]
+        ber_advanced_rows = filtered_datasets["ber_advanced"]
+        cable_enhanced_rows = filtered_datasets["cable_enhanced"]
+        per_lane_performance_rows = filtered_datasets["per_lane_performance"]
+        n2n_security_rows = filtered_datasets["n2n_security"]
+
         logger.info("Calculating health score...")
         health_report = calculate_health_score(
             analysis_data=analysis_rows,
@@ -912,6 +1025,194 @@ class AnalysisService:
                 )
         return rows
 
+    def _filter_anomalies(
+        self,
+        dataset_name: str,
+        rows: List[Dict[str, object]],
+        anomaly_index: Optional[Set[Tuple[str, Optional[int]]]] = None,
+    ) -> List[Dict[str, object]]:
+        if dataset_name in {"ber", "ber_advanced"}:
+            return rows
+        if not rows:
+            return []
+        if anomaly_index:
+            matched = [row for row in rows if self._row_matches_anomaly_index(row, anomaly_index)]
+            if matched:
+                return matched
+        heuristic_rows = [row for row in rows if self._row_has_anomaly_markers(row)]
+        if heuristic_rows:
+            return heuristic_rows
+        return []
+
+    def _build_anomaly_index(self, anomaly_rows: List[Dict[str, object]]) -> Set[Tuple[str, Optional[int]]]:
+        index: Set[Tuple[str, Optional[int]]] = set()
+        for row in anomaly_rows:
+            guid = self._normalize_guid_token(row.get("NodeGUID"))
+            port = self._safe_port(row.get("PortNumber"))
+            normalized_port = None if port in (None, 0) else port
+            if guid or normalized_port is not None:
+                index.add((guid, normalized_port))
+        return index
+
+    def _row_matches_anomaly_index(
+        self,
+        row: Dict[str, object],
+        anomaly_index: Set[Tuple[str, Optional[int]]],
+    ) -> bool:
+        if not anomaly_index:
+            return False
+        guid = self._extract_guid_from_row(row)
+        port = self._extract_port_from_row(row)
+        normalized_port = None if port in (None, 0) else port
+        candidates = [(guid, normalized_port)]
+        candidates.append((guid, None))
+        if not guid:
+            candidates.append(("", normalized_port))
+            candidates.append(("", None))
+        for candidate in candidates:
+            if candidate in anomaly_index:
+                return True
+        return False
+
+    def _extract_guid_from_row(self, row: Dict[str, object]) -> str:
+        guid_keys = (
+            "NodeGUID",
+            "node_guid",
+            "Node Guid",
+            "NodeGuid",
+            "GUID",
+            "Guid",
+        )
+        for key in guid_keys:
+            if key in row:
+                value = row.get(key)
+                if value is not None and str(value).strip():
+                    return self._normalize_guid_token(value)
+        return ""
+
+    def _extract_port_from_row(self, row: Dict[str, object]) -> Optional[int]:
+        port_keys = (
+            "PortNumber",
+            "PortNum",
+            "Port",
+            "Port Number",
+            "Port #",
+            "PortId",
+            "PortID",
+        )
+        for key in port_keys:
+            if key in row:
+                port_value = self._safe_port(row.get(key))
+                if port_value is not None:
+                    return port_value
+        return None
+
+    def _normalize_guid_token(self, value: object) -> str:
+        if value is None:
+            return ""
+        text = str(value).strip().lower()
+        if not text or text in {"none", "null"}:
+            return ""
+        if text.startswith("0x"):
+            return text
+        try:
+            return hex(int(text, 16))
+        except (ValueError, TypeError):
+            return text
+
+    def _row_has_anomaly_markers(self, row: Dict[str, object]) -> bool:
+        severity_normal = {"", "normal", "info", "ok", "pass", "healthy", "none"}
+        numeric_keywords = (
+            "error",
+            "fail",
+            "linkdown",
+            "downed",
+            "down_count",
+            "recovery",
+            "alarm",
+            "warning",
+            "anomaly",
+            "icrc",
+            "parity",
+            "discard",
+            "drop",
+            "timeout",
+            "mismatch",
+            "violation",
+            "unhealthy",
+            "problem",
+            "issue",
+            "retry",
+            "fault",
+            "alert",
+        )
+        negative_value_tokens = (
+            "fail",
+            "error",
+            "warning",
+            "critical",
+            "alarm",
+            "down",
+            "inactive",
+            "not active",
+            "mismatch",
+            "unsupported",
+            "timeout",
+            "asym",
+            "asymmetric",
+            "unhealthy",
+            "degraded",
+            "violation",
+            "missing",
+            "not present",
+            "fault",
+            "bad",
+            "exceeded",
+        )
+        for key, value in row.items():
+            if isinstance(value, (dict, list)):
+                continue
+            key_lower = str(key).lower()
+            if "anomaly" in key_lower:
+                if self._value_indicates_problem(value):
+                    return True
+                continue
+            if "severity" in key_lower:
+                severity = str(value).strip().lower()
+                if severity and severity not in severity_normal:
+                    return True
+                continue
+            if key_lower in {"issues", "issue", "problems", "alerts"}:
+                if self._value_indicates_problem(value):
+                    return True
+                continue
+            if any(keyword in key_lower for keyword in numeric_keywords):
+                if "threshold" in key_lower or "limit" in key_lower:
+                    continue
+                if self._value_indicates_problem(value):
+                    return True
+                continue
+            if any(token in (str(value).strip().lower() if isinstance(value, str) else "") for token in negative_value_tokens):
+                return True
+        return False
+
+    def _value_indicates_problem(self, value: object) -> bool:
+        if value is None:
+            return False
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, numbers.Number):
+            numeric = float(value)
+            if math.isnan(numeric) or math.isinf(numeric):
+                return False
+            return numeric != 0.0
+        text = str(value).strip().lower()
+        if not text:
+            return False
+        if text in {"0", "false", "off", "normal", "none", "ok", "pass", "healthy"}:
+            return False
+        return True
+
     def _expected_topology_rows(self, dataset_root: Path) -> List[Dict[str, object]]:
         if not self._expected_topology_path:
             return []
@@ -959,6 +1260,8 @@ class AnalysisService:
 
     def _preview_records(self, records: List[Dict[str, object]]) -> List[Dict[str, object]]:
         if not records:
+            return records
+        if MAX_PREVIEW_ROWS is None:
             return records
         if len(records) <= MAX_PREVIEW_ROWS:
             return records

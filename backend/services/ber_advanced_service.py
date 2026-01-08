@@ -208,7 +208,7 @@ class BerAdvancedService:
         Example: mantissa=15, exponent=254 → "1.5e-253"
         """
         if mantissa == 0:
-            return "0e+00"
+            return "0.00E+00"
 
         try:
             # Calculate log10 value
@@ -218,9 +218,9 @@ class BerAdvancedService:
             sci_exponent = int(math.floor(log10_value))      # -253
             sci_mantissa = 10 ** (log10_value - sci_exponent)  # 1.5
 
-            return f"{sci_mantissa:.1f}e{sci_exponent:+03d}"  # "1.5e-253"
+            return f"{sci_mantissa:.2f}E{sci_exponent:+03d}"  # "1.50E-253"
         except (ValueError, OverflowError):
-            return "0e+00"
+            return "0.00E+00"
 
     @staticmethod
     def _classify_ber_severity(raw_log: float, eff_log: float, sym_log: float,
