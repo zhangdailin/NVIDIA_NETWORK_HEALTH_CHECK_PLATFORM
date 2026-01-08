@@ -64,6 +64,48 @@ const hasAlarmFlag = (value) => {
   }
 }
 
+const TAB_DEFINITIONS = [
+  { key: 'overview', label: 'Overview', icon: Activity },
+  { key: 'cable', label: 'Cable Issues', icon: Server },
+  { key: 'xmit', label: 'Congestion', icon: AlertTriangle },
+  { key: 'ber', label: 'BER', icon: ShieldCheck },
+  { key: 'hca', label: 'Firmware', icon: Cpu },
+  { key: 'latency', label: 'Latency', icon: Clock3 },
+  { key: 'fan', label: 'Fans', icon: FanIcon },
+  { key: 'temperature', label: 'Temp', icon: Thermometer },
+  { key: 'power', label: 'Power', icon: Zap },
+  { key: 'switches', label: 'Switches', icon: Network },
+  { key: 'routing', label: 'Routing', icon: GitBranch },
+  { key: 'port_health', label: 'Port Health', icon: Gauge },
+  { key: 'links', label: 'Links', icon: Link },
+  { key: 'qos', label: 'QoS', icon: Layers },
+  { key: 'sm_info', label: 'SM', icon: Settings },
+  { key: 'port_hierarchy', label: 'Hierarchy', icon: Database },
+  { key: 'mlnx_counters', label: 'MLNX Counters', icon: ChipIcon },
+  { key: 'pm_delta', label: 'PM Delta', icon: BarChart2 },
+  { key: 'vports', label: 'VPorts', icon: Box },
+  { key: 'pkey', label: 'PKEY', icon: Key },
+  { key: 'system_info', label: 'System', icon: Info },
+  { key: 'extended_port_info', label: 'Port Ext', icon: PlugZap },
+  { key: 'ar_info', label: 'AR', icon: Shuffle },
+  { key: 'sharp', label: 'SHARP', icon: BrainCircuit },
+  { key: 'fec_mode', label: 'FEC', icon: Shield },
+  { key: 'phy_diagnostics', label: 'PHY', icon: Radio },
+  { key: 'neighbors', label: 'Neighbors', icon: Users },
+  { key: 'buffer_histogram', label: 'Buffers', icon: BarChart3 },
+  { key: 'extended_node_info', label: 'Nodes', icon: HardDrive },
+  { key: 'extended_switch_info', label: 'Switch Ext', icon: Network },
+  { key: 'power_sensors', label: 'Sensors', icon: Zap },
+  { key: 'routing_config', label: 'HBF/PFRN', icon: Router },
+  { key: 'temp_alerts', label: 'Temp Alerts', icon: ThermometerSun },
+  { key: 'credit_watchdog', label: 'Credit WD', icon: Timer },
+  { key: 'pci_performance', label: 'PCIe Perf', icon: HardDrive },
+  { key: 'ber_advanced', label: 'BER Adv', icon: BarChart3 },
+  { key: 'cable_enhanced', label: 'Cable Enh', icon: PlugZap },
+  { key: 'per_lane_performance', label: 'Per-Lane', icon: Layers },
+  { key: 'n2n_security', label: 'N2N Sec', icon: Shield },
+]
+
 const buildActionPlan = (issues = []) => {
   const safeIssues = ensureArray(issues)
   const dedup = new Set()
@@ -477,6 +519,808 @@ function InsightCard({ title, subtitle, description, actions = [], severity = 'i
   )
 }
 
+const resolveTabMeta = (key) => TAB_DEFINITIONS.find(tab => tab.key === key) || { label: key, icon: Activity }
+
+const summarizeCableHealth = (rows = []) => {
+  const safeRows = ensureArray(rows)
+  let critical = 0
+  let warning = 0
+
+  safeRows.forEach(row => {
+    const temp = toNumber(row['Temperature (c)'] ?? row.Temperature)
+    const hasOpticalAlarm = [
+      'TX Bias Alarm and Warning',
+      'TX Power Alarm and Warning',
+      'RX Power Alarm and Warning',
+      'Latched Voltage Alarm and Warning'
+    ].some(key => hasAlarmFlag(row[key]))
+    const complianceStatus = String(row.CableComplianceStatus || '').toLowerCase()
+    const speedStatus = String(row.CableSpeedStatus || '').toLowerCase()
+
+    const severity = temp >= 80 || hasOpticalAlarm
+      ? 'critical'
+      : temp >= 70 || (complianceStatus && complianceStatus !== 'ok') || (speedStatus && speedStatus !== 'ok')
+        ? 'warning'
+        : 'info'
+
+    if (severity === 'critical') critical++
+    else if (severity === 'warning') warning++
+  })
+
+  return {
+    total: safeRows.length,
+    critical,
+    warning,
+    healthy: Math.max(0, safeRows.length - critical - warning),
+    severity: critical > 0 ? 'critical' : warning > 0 ? 'warning' : 'info',
+  }
+}
+
+const summarizeCongestionHealth = (rows = []) => {
+  const safeRows = ensureArray(rows)
+  let critical = 0
+  let warning = 0
+
+  safeRows.forEach(row => {
+    const ratio = toNumber(row.WaitRatioPct)
+    const waitSeconds = toNumber(row.WaitSeconds)
+    const congestionPct = toNumber(row.XmitCongestionPct)
+    const level = String(row.CongestionLevel || '').toLowerCase()
+    const fecnCount = toNumber(row.FECNCount)
+    const becnCount = toNumber(row.BECNCount)
+
+    const isCritical = ratio >= 5 || congestionPct >= 5 || level === 'critical'
+    const isWarning =
+      isCritical ? false : (
+        ratio >= 1 ||
+        congestionPct >= 1 ||
+        waitSeconds > 0 ||
+        level === 'warning' ||
+        fecnCount > 0 ||
+        becnCount > 0
+      )
+
+    if (isCritical) critical++
+    else if (isWarning) warning++
+  })
+
+  return {
+    total: safeRows.length,
+    critical,
+    warning,
+    severity: critical > 0 ? 'critical' : warning > 0 ? 'warning' : 'info',
+  }
+}
+
+const combineBerRows = (berData = [], berAdvancedData = []) => {
+  const allRows = [...ensureArray(berData).map(row => ({ ...row, source: 'basic' }))]
+
+  ensureArray(berAdvancedData).forEach(row => {
+    const idx = allRows.findIndex(
+      item => item.NodeGUID === row.NodeGUID && item.PortNumber === row.PortNumber
+    )
+    if (idx === -1) {
+      allRows.push({ ...row, source: 'advanced' })
+    } else {
+      allRows[idx] = { ...allRows[idx], ...row, source: 'merged' }
+    }
+  })
+
+  return allRows
+}
+
+const summarizeBerHealth = (berData = [], berAdvancedData = []) => {
+  const rows = combineBerRows(berData, berAdvancedData)
+  const critical = []
+  const warning = []
+  const noThreshold = []
+
+  rows.forEach(row => {
+    const severity = String(row.SymbolBERSeverity || row.Severity || '').toLowerCase()
+    const eventName = String(row.EventName || row.Issues || '').toLowerCase()
+    const normalized = {
+      nodeName: row['Node Name'] || row.NodeName || 'Unknown',
+      nodeGuid: row.NodeGUID || row['Node GUID'] || '',
+      portNumber: row.PortNumber || row['Port Number'] || 'N/A',
+      symbolBer: row.SymbolBER || row['Symbol BER'] || row.EffectiveBER || row.RawBER || 'N/A',
+      effectiveBer: row.EffectiveBER || row['Effective BER'] || 'N/A',
+      rawBer: row.RawBER || row['Raw BER'] || 'N/A',
+      log10Value: toNumber(row.SymbolBERLog10Value || row.EffectiveBERLog10 || row.RawBERLog10),
+      severity: severity || 'info',
+    }
+
+    if (severity === 'critical') critical.push(normalized)
+    else if (severity === 'warning') warning.push(normalized)
+    else if (eventName.includes('no_threshold')) noThreshold.push(normalized)
+  })
+
+  critical.sort((a, b) => b.log10Value - a.log10Value)
+  warning.sort((a, b) => b.log10Value - a.log10Value)
+
+  return {
+    total: rows.length,
+    criticalCount: critical.length,
+    warningCount: warning.length,
+    noThresholdCount: noThreshold.length,
+    topCritical: critical.slice(0, 4),
+    topWarning: warning.slice(0, 4),
+    severity: critical.length > 0 ? 'critical' : warning.length > 0 ? 'warning' : 'info',
+  }
+}
+
+const evaluateFirmwareHealth = (rows = [], firmwareWarnings = [], pciWarnings = []) => {
+  const safeRows = ensureArray(rows)
+  let outdatedFwCount = 0
+  let psidIssueCount = 0
+  const fwVersions = new Set()
+
+  safeRows.forEach(row => {
+    const fwCompliant = row.FW_Compliant
+    const psidCompliant = row.PSID_Compliant
+    const fwVersion = row.FW_Version || row.FirmwareVersion
+
+    if (fwVersion) fwVersions.add(fwVersion)
+
+    if (fwCompliant === false || fwCompliant === 'false' || fwCompliant === 'False') {
+      outdatedFwCount++
+    }
+    if (psidCompliant === false || psidCompliant === 'false' || psidCompliant === 'False') {
+      psidIssueCount++
+    }
+  })
+
+  const problems = []
+
+  if (outdatedFwCount > 0) {
+    problems.push({
+      severity: 'warning',
+      summary: `${outdatedFwCount} 个设备固件版本过旧，建议升级`,
+      kbType: 'HCA_FIRMWARE_OUTDATED'
+    })
+  }
+  if (psidIssueCount > 0) {
+    problems.push({
+      severity: 'warning',
+      summary: `${psidIssueCount} 个设备PSID不在支持列表中`,
+      kbType: 'HCA_PSID_UNSUPPORTED'
+    })
+  }
+  if (fwVersions.size > 3) {
+    problems.push({
+      severity: 'info',
+      summary: `检测到 ${fwVersions.size} 个不同的固件版本，建议统一`,
+      kbType: 'HCA_FIRMWARE_MIXED_VERSIONS'
+    })
+  }
+  if (firmwareWarnings.length > 0) {
+    problems.push({
+      severity: 'warning',
+      summary: `${firmwareWarnings.length} 个节点固件版本不一致 (来自ibdiagnet警告)`,
+      kbType: 'HCA_FIRMWARE_MIXED_VERSIONS'
+    })
+  }
+  if (pciWarnings.length > 0) {
+    problems.push({
+      severity: 'critical',
+      summary: `${pciWarnings.length} 个端口PCI速度降级 (如Gen4→Gen3)，影响性能`,
+      kbType: 'PCI_DEGRADATION'
+    })
+  }
+
+  return {
+    problems,
+    stats: {
+      total: safeRows.length,
+      outdatedFwCount,
+      psidIssueCount,
+      firmwareWarningCount: firmwareWarnings.length,
+      pciWarningCount: pciWarnings.length,
+      uniqueFwVersions: fwVersions.size,
+      severity: pciWarnings.length > 0 || outdatedFwCount > 0
+        ? 'critical'
+        : (psidIssueCount > 0 || fwVersions.size > 3 || firmwareWarnings.length > 0 ? 'warning' : 'info'),
+    }
+  }
+}
+
+const evaluateLatencyHealth = (rows = []) => {
+  const safeRows = ensureArray(rows)
+  let highP99Count = 0
+  let upperBucketCount = 0
+  let jitterCount = 0
+
+  safeRows.forEach(row => {
+    const p99OverMedian = toNumber(row.RttP99OverMedian)
+    const upperRatio = toNumber(row.RttUpperBucketRatio)
+    const minRtt = toNumber(row.RttMinUs)
+    const maxRtt = toNumber(row.RttMaxUs)
+
+    if (p99OverMedian >= 3) highP99Count++
+    if (upperRatio >= 0.1) upperBucketCount++
+    if (minRtt > 0 && maxRtt > minRtt * 10) jitterCount++
+  })
+
+  const problems = []
+  if (highP99Count > 0) {
+    problems.push({
+      severity: highP99Count > 5 ? 'critical' : 'warning',
+      summary: `${highP99Count} 个端口P99延迟异常偏高 (>3倍中位数)`,
+      kbType: 'HISTOGRAM_HIGH_LATENCY'
+    })
+  }
+  if (upperBucketCount > 0) {
+    problems.push({
+      severity: 'warning',
+      summary: `${upperBucketCount} 个端口高延迟桶占比过高 (>10%)`,
+      kbType: 'HISTOGRAM_UPPER_BUCKET'
+    })
+  }
+  if (jitterCount > 0) {
+    problems.push({
+      severity: 'warning',
+      summary: `${jitterCount} 个端口延迟抖动过大`,
+      kbType: 'HISTOGRAM_JITTER'
+    })
+  }
+
+  return {
+    problems,
+    stats: {
+      total: safeRows.length,
+      highP99Count,
+      upperBucketCount,
+      jitterCount,
+      severity: highP99Count > 0 ? 'critical' : (upperBucketCount > 0 || jitterCount > 0 ? 'warning' : 'info'),
+    }
+  }
+}
+
+const evaluateFanHealth = (rows = []) => {
+  const safeRows = ensureArray(rows)
+  let lowSpeedCount = 0
+  let highSpeedCount = 0
+  let alertCount = 0
+
+  safeRows.forEach(row => {
+    const fanSpeed = toNumber(row.FanSpeed)
+    const minSpeed = toNumber(row.MinSpeed)
+    const maxSpeed = toNumber(row.MaxSpeed)
+    const status = String(row.FanStatus || '').toLowerCase()
+
+    if (status === 'alert') alertCount++
+    if (minSpeed > 0 && fanSpeed < minSpeed) lowSpeedCount++
+    if (maxSpeed > 0 && fanSpeed > maxSpeed * 0.9) highSpeedCount++
+  })
+
+  const problems = []
+  if (lowSpeedCount > 0 || alertCount > 0) {
+    problems.push({
+      severity: 'critical',
+      summary: `${Math.max(lowSpeedCount, alertCount)} 个风扇转速过低或告警，可能导致设备过热`,
+      kbType: 'FAN_SPEED_LOW'
+    })
+  }
+  if (highSpeedCount > 0) {
+    problems.push({
+      severity: 'warning',
+      summary: `${highSpeedCount} 个风扇长时间高速运转，散热系统压力大`,
+      kbType: 'FAN_SPEED_HIGH'
+    })
+  }
+
+  return {
+    problems,
+    stats: {
+      total: safeRows.length,
+      lowSpeedCount,
+      highSpeedCount,
+      alertCount,
+      severity: lowSpeedCount > 0 || alertCount > 0 ? 'critical' : (highSpeedCount > 0 ? 'warning' : 'info'),
+    }
+  }
+}
+
+const evaluateTemperatureHealth = (rows = []) => {
+  const safeRows = ensureArray(rows)
+  let criticalCount = 0
+  let warningCount = 0
+
+  safeRows.forEach(row => {
+    const severity = String(row.Severity || '').toLowerCase()
+    if (severity === 'critical') criticalCount++
+    else if (severity === 'warning') warningCount++
+  })
+
+  const problems = []
+  if (criticalCount > 0) {
+    problems.push({
+      severity: 'critical',
+      summary: `${criticalCount} 个传感器温度严重过高，可能导致设备损坏`,
+      kbType: 'CABLE_HIGH_TEMPERATURE'
+    })
+  }
+  if (warningCount > 0) {
+    problems.push({
+      severity: 'warning',
+      summary: `${warningCount} 个传感器温度偏高，建议检查散热`,
+      kbType: 'CABLE_HIGH_TEMPERATURE'
+    })
+  }
+
+  return {
+    problems,
+    stats: {
+      total: safeRows.length,
+      criticalCount,
+      warningCount,
+      severity: criticalCount > 0 ? 'critical' : (warningCount > 0 ? 'warning' : 'info'),
+    }
+  }
+}
+
+const evaluatePowerHealth = (rows = []) => {
+  const safeRows = ensureArray(rows)
+  let psuCriticalCount = 0
+  let psuWarningCount = 0
+  let notPresentCount = 0
+
+  safeRows.forEach(row => {
+    const severity = String(row.Severity || '').toLowerCase()
+    if (severity === 'critical') psuCriticalCount++
+    else if (severity === 'warning') psuWarningCount++
+    if (row.IsPresent === false) notPresentCount++
+  })
+
+  const problems = []
+  if (psuCriticalCount > 0) {
+    problems.push({
+      severity: 'critical',
+      summary: `${psuCriticalCount} 个电源有严重故障，可能影响设备运行`,
+      kbType: 'FAN_SPEED_LOW'
+    })
+  }
+  if (psuWarningCount > 0) {
+    problems.push({
+      severity: 'warning',
+      summary: `${psuWarningCount} 个电源有告警状态`,
+      kbType: 'FAN_SPEED_LOW'
+    })
+  }
+  if (notPresentCount > 0) {
+    problems.push({
+      severity: 'info',
+      summary: `${notPresentCount} 个电源槽位未安装模块`,
+      kbType: 'FAN_SPEED_LOW'
+    })
+  }
+
+  return {
+    problems,
+    stats: {
+      total: safeRows.length,
+      psuCriticalCount,
+      psuWarningCount,
+      notPresentCount,
+      severity: psuCriticalCount > 0 ? 'critical' : (psuWarningCount > 0 ? 'warning' : 'info'),
+    }
+  }
+}
+
+const evaluateRoutingHealth = (rows = []) => {
+  const safeRows = ensureArray(rows)
+  let rnErrorCount = 0
+  let frErrorCount = 0
+  let hbfFallbackCount = 0
+
+  safeRows.forEach(row => {
+    if (toNumber(row.RNErrors) > 0) rnErrorCount++
+    if (toNumber(row.FRErrors) > 0) frErrorCount++
+    if (toNumber(row.HBFFallbackLocal) > 0 || toNumber(row.HBFFallbackRemote) > 0) {
+      hbfFallbackCount++
+    }
+  })
+
+  const problems = []
+  if (frErrorCount > 0) {
+    problems.push({
+      severity: 'critical',
+      summary: `${frErrorCount} 个端口有快速恢复错误，表明链路存在间歇性问题`,
+      kbType: 'XMIT_LINK_DOWN_COUNTER'
+    })
+  }
+  if (rnErrorCount > 0) {
+    problems.push({
+      severity: 'warning',
+      summary: `${rnErrorCount} 个端口有RN (Re-route Notification) 错误`,
+      kbType: 'XMIT_FECN_BECN'
+    })
+  }
+  if (hbfFallbackCount > 0) {
+    problems.push({
+      severity: 'warning',
+      summary: `${hbfFallbackCount} 个端口触发HBF回退，自适应路由效率可能受影响`,
+      kbType: 'XMIT_MODERATE_CONGESTION'
+    })
+  }
+
+  return {
+    problems,
+    stats: {
+      total: safeRows.length,
+      rnErrorCount,
+      frErrorCount,
+      hbfFallbackCount,
+      severity: frErrorCount > 0 ? 'critical' : (rnErrorCount > 0 || hbfFallbackCount > 0 ? 'warning' : 'info'),
+    }
+  }
+}
+
+const evaluatePortHealth = (rows = []) => {
+  const safeRows = ensureArray(rows)
+  let icrcErrorCount = 0
+  let parityErrorCount = 0
+  let unhealthyCount = 0
+   let linkDownPortCount = 0
+   let linkDownEvents = 0
+   let linkRecoveryPortCount = 0
+   let linkRecoveryEvents = 0
+
+  safeRows.forEach(row => {
+    if (toNumber(row.RxICRCErrors) > 0) icrcErrorCount++
+    if (toNumber(row.TxParityErrors) > 0) parityErrorCount++
+    if (toNumber(row.UnhealthyReason) > 0) unhealthyCount++
+    const downEvents = toNumber(
+      row.LinkDownEvents ?? row.LinkDownedCounter ?? row.LinkDownedCounterExt ?? row.link_down_events
+    )
+    if (downEvents > 0) {
+      linkDownPortCount++
+      linkDownEvents += downEvents
+    }
+    const recoveryEvents = toNumber(
+      row.LinkRecoveryEvents ?? row.LinkErrorRecoveryCounter ?? row.LinkErrorRecoveryCounterExt ?? row.link_recovery_events
+    )
+    if (recoveryEvents > 0) {
+      linkRecoveryPortCount++
+      linkRecoveryEvents += recoveryEvents
+    }
+  })
+
+  const problems = []
+  if (linkDownPortCount > 0) {
+    problems.push({
+      severity: 'critical',
+      summary: `${linkDownPortCount} 个端口出现 LinkDown (共 ${linkDownEvents} 次)`,
+      kbType: 'XMIT_LINK_DOWN_COUNTER',
+    })
+  }
+  if (linkRecoveryPortCount > 0) {
+    problems.push({
+      severity: linkDownPortCount > 0 ? 'critical' : 'warning',
+      summary: `${linkRecoveryPortCount} 个端口发生链路恢复事件 (共 ${linkRecoveryEvents} 次)`,
+      kbType: 'XMIT_LINK_RECOVERY',
+    })
+  }
+  if (parityErrorCount > 0) {
+    problems.push({
+      severity: 'critical',
+      summary: `${parityErrorCount} 个端口有奇偶校验错误，可能存在硬件故障`,
+      kbType: 'BER_CRITICAL'
+    })
+  }
+  if (unhealthyCount > 0) {
+    problems.push({
+      severity: 'critical',
+      summary: `${unhealthyCount} 个端口被标记为不健康状态`,
+      kbType: 'XMIT_LINK_DOWN_COUNTER'
+    })
+  }
+  if (icrcErrorCount > 0) {
+    problems.push({
+      severity: 'warning',
+      summary: `${icrcErrorCount} 个端口有ICRC错误，数据完整性受影响`,
+      kbType: 'BER_WARNING'
+    })
+  }
+
+  return {
+    problems,
+    stats: {
+      total: safeRows.length,
+      icrcErrorCount,
+      parityErrorCount,
+      unhealthyCount,
+      linkDownPortCount,
+      linkDownEvents,
+      linkRecoveryPortCount,
+      linkRecoveryEvents,
+      severity:
+        parityErrorCount > 0 ||
+        unhealthyCount > 0 ||
+        linkDownPortCount > 0
+          ? 'critical'
+          : (icrcErrorCount > 0 || linkRecoveryPortCount > 0 ? 'warning' : 'info'),
+    }
+  }
+}
+
+const summarizeN2NSecurity = (summary = {}, rows = []) => {
+  const safeSummary = summary || {}
+  const totalNodes = safeSummary.total_nodes ?? ensureArray(rows).length
+  const coveragePct = safeSummary.n2n_coverage_pct ?? 0
+  const nodesWithN2N = safeSummary.nodes_with_n2n_enabled ?? 0
+  const nodesWithKeys = safeSummary.nodes_with_keys ?? 0
+  const violations = safeSummary.security_violations ?? 0
+
+  return {
+    totalNodes,
+    coveragePct,
+    nodesWithN2N,
+    nodesWithKeys,
+    violations,
+    severity: violations > 0
+      ? 'critical'
+      : (coveragePct && coveragePct < 80 ? 'warning' : 'info'),
+  }
+}
+
+const HIGHLIGHT_BUILDERS = [
+  {
+    key: 'cable',
+    title: '线缆与光模块',
+    description: '温度 / 光功率 / 规格一致性',
+    build: ({ cable_data }) => {
+      const stats = summarizeCableHealth(cable_data)
+      if (!stats.total) return null
+      return {
+        severity: stats.severity,
+        valueLabel: `${stats.critical} 严重`,
+        metrics: [
+          `${stats.warning} 警告`,
+          `${stats.total} 条记录`
+        ]
+      }
+    }
+  },
+  {
+    key: 'xmit',
+    title: '拥塞与错误 (Xmit)',
+    description: 'WaitRatio / FECN / BECN / XmitCongestion',
+    build: ({ xmit_data }) => {
+      const stats = summarizeCongestionHealth(xmit_data)
+      if (!stats.total) return null
+      return {
+        severity: stats.severity,
+        valueLabel: `${stats.critical} 严重`,
+        metrics: [
+          `${stats.warning} 警告`,
+          `${stats.total} 端口`
+        ]
+      }
+    }
+  },
+  {
+    key: 'ber',
+    title: 'BER 状态',
+    description: 'Symbol / Effective / Raw BER',
+    build: ({ ber_data, ber_advanced_data }) => {
+      const summary = summarizeBerHealth(ber_data, ber_advanced_data)
+      if (!summary.total) return null
+      return {
+        severity: summary.severity,
+        valueLabel: `${summary.criticalCount} 严重`,
+        metrics: [
+          `${summary.warningCount} 警告`,
+          `${summary.total} 端口`
+        ]
+      }
+    }
+  },
+  {
+    key: 'hca',
+    title: 'HCA / 固件',
+    description: 'FW / PSID / PCI / ibdiagnet WARNINGS',
+    build: ({ hca_data, firmwareWarnings, pciWarnings }) => {
+      const { stats } = evaluateFirmwareHealth(hca_data, firmwareWarnings, pciWarnings)
+      if (!stats.total) return null
+      return {
+        severity: stats.severity,
+        valueLabel: `${stats.outdatedFwCount + stats.pciWarningCount} 风险`,
+        metrics: [
+          `${stats.psidIssueCount} PSID`,
+          `${stats.total} 设备`
+        ]
+      }
+    }
+  },
+  {
+    key: 'latency',
+    title: '延迟直方图',
+    description: 'P99/Median、Upper bucket、抖动',
+    build: ({ histogram_data }) => {
+      const { stats } = evaluateLatencyHealth(histogram_data)
+      if (!stats.total) return null
+      return {
+        severity: stats.severity,
+        valueLabel: `${stats.highP99Count} 高P99`,
+        metrics: [
+          `${stats.upperBucketCount} 高桶`,
+          `${stats.jitterCount} 抖动`
+        ]
+      }
+    }
+  },
+  {
+    key: 'fan',
+    title: '风扇与机箱',
+    description: '速度 / Alert / Deviations',
+    build: ({ fan_data }) => {
+      const { stats } = evaluateFanHealth(fan_data)
+      if (!stats.total) return null
+      return {
+        severity: stats.severity,
+        valueLabel: `${Math.max(stats.lowSpeedCount, stats.alertCount)} 告警`,
+        metrics: [
+          `${stats.highSpeedCount} 高速`,
+          `${stats.total} 传感器`
+        ]
+      }
+    }
+  },
+  {
+    key: 'temperature',
+    title: '温度监控',
+    description: '温度传感器健康度',
+    build: ({ temperature_data }) => {
+      const { stats } = evaluateTemperatureHealth(temperature_data)
+      if (!stats.total) return null
+      return {
+        severity: stats.severity,
+        valueLabel: `${stats.criticalCount} 严重`,
+        metrics: [
+          `${stats.warningCount} 警告`,
+          `${stats.total} 传感器`
+        ]
+      }
+    }
+  },
+  {
+    key: 'power',
+    title: '电源状态',
+    description: 'PSU 告警 / 缺失 / 总功耗',
+    build: ({ power_data }) => {
+      const { stats } = evaluatePowerHealth(power_data)
+      if (!stats.total) return null
+      return {
+        severity: stats.severity,
+        valueLabel: `${stats.psuCriticalCount} 严重`,
+        metrics: [
+          `${stats.psuWarningCount} 告警`,
+          `${stats.notPresentCount} 未安装`
+        ]
+      }
+    }
+  },
+  {
+    key: 'routing',
+    title: '自适应路由',
+    description: 'RN / FR / HBF',
+    build: ({ routing_data }) => {
+      const { stats } = evaluateRoutingHealth(routing_data)
+      if (!stats.total) return null
+      return {
+        severity: stats.severity,
+        valueLabel: `${stats.frErrorCount} FR 错误`,
+        metrics: [
+          `${stats.rnErrorCount} RN`,
+          `${stats.hbfFallbackCount} HBF 回退`
+        ]
+      }
+    }
+  },
+  {
+    key: 'port_health',
+    title: '端口健康',
+    description: 'ICRC / Parity / Unhealthy Ports',
+    build: ({ port_health_data }) => {
+      const { stats } = evaluatePortHealth(port_health_data)
+      if (!stats.total) return null
+      return {
+        severity: stats.severity,
+        valueLabel: `${stats.unhealthyCount || 0} 不健康`,
+        metrics: [
+          `${stats.parityErrorCount} Parity`,
+          `${stats.icrcErrorCount} ICRC`,
+          `${stats.linkDownPortCount || 0} LinkDown`
+        ]
+      }
+    }
+  },
+  {
+    key: 'n2n_security',
+    title: '端到端安全',
+    description: 'N2N 启用率 / Key 覆盖率 / 违规',
+    build: ({ n2n_security_summary, n2n_security_data }) => {
+      const stats = summarizeN2NSecurity(n2n_security_summary, n2n_security_data)
+      if (!stats.totalNodes) return null
+      return {
+        severity: stats.severity,
+        valueLabel: `${stats.violations} 违规`,
+        metrics: [
+          `覆盖率 ${stats.coveragePct || 0}%`,
+          `${stats.nodesWithKeys || 0} 节点有密钥`
+        ]
+      }
+    }
+  }
+]
+
+const buildOverviewHighlights = (context = {}) => {
+  return HIGHLIGHT_BUILDERS
+    .map(builder => {
+      const payload = builder.build(context)
+      if (!payload) return null
+      const meta = resolveTabMeta(builder.key)
+      return {
+        key: builder.key,
+        icon: meta.icon || Activity,
+        title: builder.title || meta.label || builder.key,
+        description: builder.description,
+        ...payload,
+      }
+    })
+    .filter(Boolean)
+}
+
+const getSeverityStatus = (severity) => {
+  switch (severity) {
+    case 'critical':
+      return '需要处理'
+    case 'warning':
+      return '待观察'
+    default:
+      return '正常'
+  }
+}
+
+function OverviewHighlights({ items = [], onSelectTab }) {
+  if (!items.length) return null
+
+  return (
+    <div className="overview-grid">
+      {items.map(item => {
+        const Icon = item.icon || Activity
+        return (
+          <button
+            key={item.key}
+            type="button"
+            className={`overview-card ${item.severity}`}
+            onClick={() => onSelectTab?.(item.key)}
+          >
+            <div className="overview-card-header">
+              <div className="overview-card-title">
+                <Icon size={18} />
+                <span>{item.title}</span>
+              </div>
+              <span className={`overview-card-status ${item.severity}`}>
+                {item.statusLabel || getSeverityStatus(item.severity)}
+              </span>
+            </div>
+            {item.description && <p className="overview-card-description">{item.description}</p>}
+            <div className="overview-card-value">{item.valueLabel}</div>
+            {item.metrics?.length > 0 && (
+              <div className="overview-metrics">
+                {item.metrics.map((metric, idx) => (
+                  <span key={`${item.key}-metric-${idx}`}>{metric}</span>
+                ))}
+              </div>
+            )}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 // Health Score Component
 function HealthScore({ health }) {
   if (!health) return null
@@ -704,7 +1548,7 @@ function IssuesList({ issues }) {
 }
 
 // PaginatedTable component - moved outside to prevent re-creation on every render
-function PaginatedTable({ rows, totalRows, serverPreviewLimit, emptyDebug }) {
+function PaginatedTable({ rows, totalRows, emptyDebug }) {
   const data = ensureArray(rows)
   const [page, setPage] = useState(1)
 
@@ -748,16 +1592,11 @@ function PaginatedTable({ rows, totalRows, serverPreviewLimit, emptyDebug }) {
   const endIndex = Math.min(startIndex + pageSize, totalPreviewRows)
   const displayRows = data.slice(startIndex, endIndex)
   const totalRecords = Number.isFinite(totalRows) && totalRows > 0 ? totalRows : totalPreviewRows
-  const serverLimit = Number.isFinite(serverPreviewLimit) && serverPreviewLimit > 0 ? serverPreviewLimit : null
-  const serverTrimmed = serverLimit ? totalRecords > serverLimit : false
   const previewTrimmed = totalRecords > totalPreviewRows
 
   const infoParts = [`Showing rows ${startIndex + 1}-${endIndex} of ${totalRecords} rows.`]
   if (previewTrimmed) {
     infoParts.push(`Only ${totalPreviewRows} rows are available in this preview.`)
-  }
-  if (serverTrimmed) {
-    infoParts.push(`Server preview limit: ${serverLimit}.`)
   }
 
   return (
@@ -802,7 +1641,7 @@ function PaginatedTable({ rows, totalRows, serverPreviewLimit, emptyDebug }) {
         </span>
       </div>
       <p style={{ marginTop: '10px', fontSize: '0.85rem', color: '#94a3b8' }}>
-        {infoParts.join(' ')} Download the uploaded ibdiagnet archive for the complete dataset.
+        {infoParts.join(' ')} Backend previews include anomalies only. Download the uploaded ibdiagnet archive for the complete dataset.
       </p>
     </div>
   )
@@ -1058,57 +1897,105 @@ function App() {
       cable_enhanced_total_rows,
       per_lane_performance_total_rows,
       n2n_security_total_rows,
-      preview_row_limit,
     } = result.data
 
     // Extract warnings by category for merging into tabs
     const firmwareWarnings = warnings_by_category?.firmware || []
     const pciWarnings = warnings_by_category?.pci || []
-    const counterWarnings = warnings_by_category?.counters || []
-    const topologyWarnings = warnings_by_category?.topology || []
-    const cableWarnings = warnings_by_category?.cable || []
-    const berWarnings = warnings_by_category?.ber || []
 
     switch (activeTab) {
       case 'overview': {
         const actionPlan = buildActionPlan(health?.issues || [])
-
-        // Topology warnings for Overview
-        const topoProblems = []
-        if (topologyWarnings.length > 0) {
-          topoProblems.push({
-            severity: 'info',
-            summary: `${topologyWarnings.length} 个节点描述重复，建议配置唯一名称便于管理`,
-            kbType: 'NODE_DUPLICATED_DESCRIPTION'
-          })
+        const highlightContext = {
+          cable_data,
+          xmit_data,
+          ber_data,
+          ber_advanced_data,
+          hca_data,
+          firmwareWarnings,
+          pciWarnings,
+          histogram_data,
+          fan_data,
+          temperature_data,
+          power_data,
+          routing_data,
+          port_health_data,
+          n2n_security_summary,
+          n2n_security_data,
         }
+        const overviewHighlights = buildOverviewHighlights(highlightContext)
+        const berSnapshot = summarizeBerHealth(ber_data, ber_advanced_data)
+        const berTopList = berSnapshot.topCritical.length > 0 ? berSnapshot.topCritical : berSnapshot.topWarning
 
         return (
           <div className="scroll-area">
-            {/* 故障汇总 - 在最前面显示 */}
             <div className="card">
-              <h2>🚨 故障汇总 (所有有问题的内容)</h2>
+              <h2>?? 故障汇总 (所有有问题的内容)</h2>
               <FaultSummary analysisData={result.data} />
             </div>
 
             <div className="card">
-              <h2>Network Health Score</h2>
+              <div className="card-header-row">
+                <h2>Network Health Score</h2>
+                <p className="card-subtitle">IBDiagnet 汇总得分</p>
+              </div>
               <HealthScore health={health} />
             </div>
 
-            {/* 🆕 BER健康分析 (替代topology) */}
-            <div className="card">
-              <h2>📊 误码率 (BER) 健康分析</h2>
-              <p style={{ color: '#666', marginBottom: '15px' }}>
-                Symbol BER、Effective BER、Raw BER 完整分析
-              </p>
-              <BERAnalysis
-                berData={ber_data}
-                berAdvancedData={ber_advanced_data}
-                perLaneData={per_lane_performance_data}
-                berAdvancedSummary={ber_advanced_summary}
-              />
-            </div>
+            {overviewHighlights.length > 0 && (
+              <div className="card">
+                <div className="card-header-row">
+                  <h2>关键分析区域概览</h2>
+                  <p className="card-subtitle">点击卡片跳转到对应标签页</p>
+                </div>
+                <OverviewHighlights items={overviewHighlights} onSelectTab={setActiveTab} />
+              </div>
+            )}
+
+            {berSnapshot.total > 0 && (
+              <div className="card">
+                <div className="card-header-row">
+                  <h2>?? BER 快速概览</h2>
+                  <button type="button" className="ghost-link" onClick={() => setActiveTab('ber')}>
+                    查看 BER 标签
+                  </button>
+                </div>
+                <div className="overview-stat-row">
+                  <div className="overview-stat">
+                    <span className="overview-stat-label">严重端口</span>
+                    <span className="overview-stat-value">{berSnapshot.criticalCount}</span>
+                  </div>
+                  <div className="overview-stat">
+                    <span className="overview-stat-label">警告端口</span>
+                    <span className="overview-stat-value">{berSnapshot.warningCount}</span>
+                  </div>
+                  <div className="overview-stat">
+                    <span className="overview-stat-label">总端口</span>
+                    <span className="overview-stat-value">{berSnapshot.total}</span>
+                  </div>
+                </div>
+                {berTopList.length > 0 && (
+                  <ul className="overview-alert-list">
+                    {berTopList.slice(0, 4).map((item, idx) => (
+                      <li key={`${item.nodeGuid || item.nodeName}-${item.portNumber}-${idx}`}>
+                        <div>
+                          <strong>{item.nodeName}</strong> · Port {item.portNumber}
+                        </div>
+                        <div className="overview-alert-metadata">
+                          <span>{item.symbolBer}</span>
+                          {item.effectiveBer && item.effectiveBer !== 'N/A' && (
+                            <span>Eff {item.effectiveBer}</span>
+                          )}
+                          {item.rawBer && item.rawBer !== 'N/A' && (
+                            <span>Raw {item.rawBer}</span>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
 
             <div className="card">
               <h2>Detected Issues</h2>
@@ -1140,7 +2027,6 @@ function App() {
                 <PaginatedTable
                   rows={data}
                   totalRows={data_total_rows}
-                  serverPreviewLimit={preview_row_limit}
                   emptyDebug={{ stdout: result.data?.debug_stdout, stderr: result.data?.debug_stderr }}
                 />
               ) : (
@@ -1173,82 +2059,59 @@ function App() {
         )
       }
       case 'ber': {
+        const berProblems = ensureArray(ber_data).filter(row => {
+          const severity = (row.SymbolBERSeverity || row.Severity || '').toLowerCase()
+          return severity === 'critical' || severity === 'warning'
+        })
+        const berProblemCards = berProblems.map(row => {
+          const severity = (row.SymbolBERSeverity || row.Severity || '').toLowerCase()
+          const node = row['Node Name'] || row.NodeName || row.NodeGUID || 'Unknown'
+          const port = row.PortNumber || row['Port Number'] || 'N/A'
+          const raw = row['Raw BER'] || row.RawBER || row.rawBer || 'N/A'
+          const effective = row['Effective BER'] || row.EffectiveBER || row.effectiveBer || 'N/A'
+          const symbol = row['Symbol BER'] || row.SymbolBER || row.symbolBer || 'N/A'
+          return {
+            severity,
+            summary: `${node} - 端口 ${port} BER 超过阈值`,
+            kbType: severity === 'critical' ? 'BER_CRITICAL' : 'BER_WARNING',
+            node,
+            port,
+            raw,
+            effective,
+            symbol,
+          }
+        })
+
         return (
           <div className="scroll-area">
             <div className="card">
               <h2>📊 误码率 (BER) 健康分析</h2>
               <p>Symbol BER、Effective BER、FEC纠正活动完整分析</p>
+
+              <ProblemSummary
+                title="🚦 BER 问题摘要"
+                problems={berProblemCards}
+                totalChecked={ber_data?.length || 0}
+                dataType="ber"
+              />
+
               <BERAnalysis
                 berData={ber_data}
                 berAdvancedData={ber_advanced_data}
                 perLaneData={per_lane_performance_data}
                 berAdvancedSummary={ber_advanced_summary}
+                showOnlyProblematic
               />
             </div>
           </div>
         )
       }
       case 'hca': {
-        // 分析HCA/Firmware问题
-        const hcaProblems = []
-        let outdatedFwCount = 0
-        let psidIssueCount = 0
-        const fwVersions = new Set()
-
-        ensureArray(hca_data).forEach(row => {
-          const fwCompliant = row.FW_Compliant
-          const psidCompliant = row.PSID_Compliant
-          const fwVersion = row.FW_Version || row.FirmwareVersion
-
-          if (fwVersion) fwVersions.add(fwVersion)
-
-          if (fwCompliant === false || fwCompliant === 'false' || fwCompliant === 'False') {
-            outdatedFwCount++
-          }
-          if (psidCompliant === false || psidCompliant === 'false' || psidCompliant === 'False') {
-            psidIssueCount++
-          }
-        })
-
-        if (outdatedFwCount > 0) {
-          hcaProblems.push({
-            severity: 'warning',
-            summary: `${outdatedFwCount} 个设备固件版本过旧，建议升级`,
-            kbType: 'HCA_FIRMWARE_OUTDATED'
-          })
-        }
-        if (psidIssueCount > 0) {
-          hcaProblems.push({
-            severity: 'warning',
-            summary: `${psidIssueCount} 个设备PSID不在支持列表中`,
-            kbType: 'HCA_PSID_UNSUPPORTED'
-          })
-        }
-        if (fwVersions.size > 3) {
-          hcaProblems.push({
-            severity: 'info',
-            summary: `检测到 ${fwVersions.size} 个不同的固件版本，建议统一`,
-            kbType: 'HCA_FIRMWARE_MIXED_VERSIONS'
-          })
-        }
-
-        // Add firmware warnings from ibdiagnet WARNINGS tables
-        if (firmwareWarnings.length > 0) {
-          hcaProblems.push({
-            severity: 'warning',
-            summary: `${firmwareWarnings.length} 个节点固件版本不一致 (来自ibdiagnet警告)`,
-            kbType: 'HCA_FIRMWARE_MIXED_VERSIONS'
-          })
-        }
-
-        // Add PCI degradation warnings
-        if (pciWarnings.length > 0) {
-          hcaProblems.push({
-            severity: 'critical',
-            summary: `${pciWarnings.length} 个端口PCI速度降级 (如Gen4→Gen3)，影响性能`,
-            kbType: 'PCI_DEGRADATION'
-          })
-        }
+        const { problems: hcaProblems, stats: hcaStats } = evaluateFirmwareHealth(
+          hca_data,
+          firmwareWarnings,
+          pciWarnings
+        )
 
         return (
           <div className="scroll-area">
@@ -1259,14 +2122,13 @@ function App() {
               <ProblemSummary
                 title="固件分析"
                 problems={hcaProblems}
-                totalChecked={ensureArray(hca_data).length}
+                totalChecked={hcaStats.total}
                 dataType="hca"
               />
 
               <PaginatedTable
                 rows={hca_data}
                 totalRows={hca_total_rows}
-                serverPreviewLimit={preview_row_limit}
               />
             </div>
           </div>
@@ -1274,45 +2136,7 @@ function App() {
       }
       case 'latency': {
         const latencyInsights = buildLatencyInsights(histogram_data || [])
-
-        // 分析延迟问题
-        const latencyProblems = []
-        let highP99Count = 0
-        let upperBucketCount = 0
-        let jitterCount = 0
-
-        ensureArray(histogram_data).forEach(row => {
-          const p99OverMedian = toNumber(row.RttP99OverMedian)
-          const upperRatio = toNumber(row.RttUpperBucketRatio)
-          const minRtt = toNumber(row.RttMinUs)
-          const maxRtt = toNumber(row.RttMaxUs)
-
-          if (p99OverMedian >= 3) highP99Count++
-          if (upperRatio >= 0.1) upperBucketCount++
-          if (minRtt > 0 && maxRtt > minRtt * 10) jitterCount++
-        })
-
-        if (highP99Count > 0) {
-          latencyProblems.push({
-            severity: highP99Count > 5 ? 'critical' : 'warning',
-            summary: `${highP99Count} 个端口P99延迟异常偏高 (>3倍中位数)`,
-            kbType: 'HISTOGRAM_HIGH_LATENCY'
-          })
-        }
-        if (upperBucketCount > 0) {
-          latencyProblems.push({
-            severity: 'warning',
-            summary: `${upperBucketCount} 个端口高延迟桶占比过高 (>10%)`,
-            kbType: 'HISTOGRAM_UPPER_BUCKET'
-          })
-        }
-        if (jitterCount > 0) {
-          latencyProblems.push({
-            severity: 'warning',
-            summary: `${jitterCount} 个端口延迟抖动过大`,
-            kbType: 'HISTOGRAM_JITTER'
-          })
-        }
+        const { problems: latencyProblems, stats: latencyStats } = evaluateLatencyHealth(histogram_data)
 
         return (
           <div className="scroll-area">
@@ -1323,7 +2147,7 @@ function App() {
               <ProblemSummary
                 title="延迟分析"
                 problems={latencyProblems}
-                totalChecked={ensureArray(histogram_data).length}
+                totalChecked={latencyStats.total}
                 dataType="histogram"
               />
 
@@ -1345,7 +2169,6 @@ function App() {
               <PaginatedTable
                 rows={histogram_data}
                 totalRows={histogram_total_rows}
-                serverPreviewLimit={preview_row_limit}
               />
             </div>
           </div>
@@ -1353,38 +2176,7 @@ function App() {
       }
       case 'fan': {
         const fanInsights = buildFanInsights(fan_data || [])
-
-        // 分析风扇问题
-        const fanProblems = []
-        let lowSpeedCount = 0
-        let highSpeedCount = 0
-        let alertCount = 0
-
-        ensureArray(fan_data).forEach(row => {
-          const fanSpeed = toNumber(row.FanSpeed)
-          const minSpeed = toNumber(row.MinSpeed)
-          const maxSpeed = toNumber(row.MaxSpeed)
-          const status = String(row.FanStatus || '').toLowerCase()
-
-          if (status === 'alert') alertCount++
-          if (minSpeed > 0 && fanSpeed < minSpeed) lowSpeedCount++
-          if (maxSpeed > 0 && fanSpeed > maxSpeed * 0.9) highSpeedCount++
-        })
-
-        if (lowSpeedCount > 0 || alertCount > 0) {
-          fanProblems.push({
-            severity: 'critical',
-            summary: `${Math.max(lowSpeedCount, alertCount)} 个风扇转速过低或告警，可能导致设备过热`,
-            kbType: 'FAN_SPEED_LOW'
-          })
-        }
-        if (highSpeedCount > 0) {
-          fanProblems.push({
-            severity: 'warning',
-            summary: `${highSpeedCount} 个风扇长时间高速运转，散热系统压力大`,
-            kbType: 'FAN_SPEED_HIGH'
-          })
-        }
+        const { problems: fanProblems, stats: fanStats } = evaluateFanHealth(fan_data)
 
         return (
           <div className="scroll-area">
@@ -1395,7 +2187,7 @@ function App() {
               <ProblemSummary
                 title="风扇健康检查"
                 problems={fanProblems}
-                totalChecked={ensureArray(fan_data).length}
+                totalChecked={fanStats.total}
                 dataType="fan"
               />
 
@@ -1417,38 +2209,13 @@ function App() {
               <PaginatedTable
                 rows={fan_data}
                 totalRows={fan_total_rows}
-                serverPreviewLimit={preview_row_limit}
               />
             </div>
           </div>
         )
       }
       case 'temperature': {
-        // 分析温度问题
-        const tempProblems = []
-        let criticalCount = 0
-        let warningCount = 0
-
-        ensureArray(temperature_data).forEach(row => {
-          const severity = String(row.Severity || '').toLowerCase()
-          if (severity === 'critical') criticalCount++
-          else if (severity === 'warning') warningCount++
-        })
-
-        if (criticalCount > 0) {
-          tempProblems.push({
-            severity: 'critical',
-            summary: `${criticalCount} 个传感器温度严重过高，可能导致设备损坏`,
-            kbType: 'CABLE_HIGH_TEMPERATURE'
-          })
-        }
-        if (warningCount > 0) {
-          tempProblems.push({
-            severity: 'warning',
-            summary: `${warningCount} 个传感器温度偏高，建议检查散热`,
-            kbType: 'CABLE_HIGH_TEMPERATURE'
-          })
-        }
+        const { problems: tempProblems, stats: tempStats } = evaluateTemperatureHealth(temperature_data)
 
         return (
           <div className="scroll-area">
@@ -1459,7 +2226,7 @@ function App() {
               <ProblemSummary
                 title="温度监控"
                 problems={tempProblems}
-                totalChecked={ensureArray(temperature_data).length}
+                totalChecked={tempStats.total}
                 dataType="temperature"
               />
 
@@ -1476,47 +2243,13 @@ function App() {
               <PaginatedTable
                 rows={temperature_data}
                 totalRows={temperature_total_rows}
-                serverPreviewLimit={preview_row_limit}
               />
             </div>
           </div>
         )
       }
       case 'power': {
-        // 分析电源问题
-        const powerProblems = []
-        let psuCriticalCount = 0
-        let psuWarningCount = 0
-        let notPresentCount = 0
-
-        ensureArray(power_data).forEach(row => {
-          const severity = String(row.Severity || '').toLowerCase()
-          if (severity === 'critical') psuCriticalCount++
-          else if (severity === 'warning') psuWarningCount++
-          if (row.IsPresent === false) notPresentCount++
-        })
-
-        if (psuCriticalCount > 0) {
-          powerProblems.push({
-            severity: 'critical',
-            summary: `${psuCriticalCount} 个电源有严重故障，可能影响设备运行`,
-            kbType: 'FAN_SPEED_LOW'
-          })
-        }
-        if (psuWarningCount > 0) {
-          powerProblems.push({
-            severity: 'warning',
-            summary: `${psuWarningCount} 个电源有告警状态`,
-            kbType: 'FAN_SPEED_LOW'
-          })
-        }
-        if (notPresentCount > 0) {
-          powerProblems.push({
-            severity: 'info',
-            summary: `${notPresentCount} 个电源槽位未安装模块`,
-            kbType: 'FAN_SPEED_LOW'
-          })
-        }
+        const { problems: powerProblems, stats: powerStats } = evaluatePowerHealth(power_data)
 
         return (
           <div className="scroll-area">
@@ -1527,7 +2260,7 @@ function App() {
               <ProblemSummary
                 title="电源状态"
                 problems={powerProblems}
-                totalChecked={ensureArray(power_data).length}
+                totalChecked={powerStats.total}
                 dataType="power"
               />
 
@@ -1544,7 +2277,6 @@ function App() {
               <PaginatedTable
                 rows={power_data}
                 totalRows={power_total_rows}
-                serverPreviewLimit={preview_row_limit}
               />
             </div>
           </div>
@@ -1571,48 +2303,13 @@ function App() {
               <PaginatedTable
                 rows={switch_data}
                 totalRows={switch_total_rows}
-                serverPreviewLimit={preview_row_limit}
               />
             </div>
           </div>
         )
       }
       case 'routing': {
-        // Analyze routing problems
-        const routingProblems = []
-        let rnErrorCount = 0
-        let frErrorCount = 0
-        let hbfFallbackCount = 0
-
-        ensureArray(routing_data).forEach(row => {
-          if (toNumber(row.RNErrors) > 0) rnErrorCount++
-          if (toNumber(row.FRErrors) > 0) frErrorCount++
-          if (toNumber(row.HBFFallbackLocal) > 0 || toNumber(row.HBFFallbackRemote) > 0) {
-            hbfFallbackCount++
-          }
-        })
-
-        if (frErrorCount > 0) {
-          routingProblems.push({
-            severity: 'critical',
-            summary: `${frErrorCount} 个端口有快速恢复错误，表明链路存在间歇性问题`,
-            kbType: 'XMIT_LINK_DOWN_COUNTER'
-          })
-        }
-        if (rnErrorCount > 0) {
-          routingProblems.push({
-            severity: 'warning',
-            summary: `${rnErrorCount} 个端口有RN (Re-route Notification) 错误`,
-            kbType: 'XMIT_FECN_BECN'
-          })
-        }
-        if (hbfFallbackCount > 0) {
-          routingProblems.push({
-            severity: 'warning',
-            summary: `${hbfFallbackCount} 个端口触发HBF回退，自适应路由效率可能受影响`,
-            kbType: 'XMIT_MODERATE_CONGESTION'
-          })
-        }
+        const { problems: routingProblems, stats: routingStats } = evaluateRoutingHealth(routing_data)
 
         return (
           <div className="scroll-area">
@@ -1623,7 +2320,7 @@ function App() {
               <ProblemSummary
                 title="自适应路由分析"
                 problems={routingProblems}
-                totalChecked={ensureArray(routing_data).length}
+                totalChecked={routingStats.total}
                 dataType="routing"
               />
 
@@ -1642,46 +2339,13 @@ function App() {
               <PaginatedTable
                 rows={routing_data}
                 totalRows={routing_total_rows}
-                serverPreviewLimit={preview_row_limit}
               />
             </div>
           </div>
         )
       }
       case 'port_health': {
-        // Analyze port health problems
-        const portHealthProblems = []
-        let icrcErrorCount = 0
-        let parityErrorCount = 0
-        let unhealthyCount = 0
-
-        ensureArray(port_health_data).forEach(row => {
-          if (toNumber(row.RxICRCErrors) > 0) icrcErrorCount++
-          if (toNumber(row.TxParityErrors) > 0) parityErrorCount++
-          if (toNumber(row.UnhealthyReason) > 0) unhealthyCount++
-        })
-
-        if (parityErrorCount > 0) {
-          portHealthProblems.push({
-            severity: 'critical',
-            summary: `${parityErrorCount} 个端口有奇偶校验错误，可能存在硬件故障`,
-            kbType: 'BER_CRITICAL'
-          })
-        }
-        if (unhealthyCount > 0) {
-          portHealthProblems.push({
-            severity: 'critical',
-            summary: `${unhealthyCount} 个端口被标记为不健康状态`,
-            kbType: 'XMIT_LINK_DOWN_COUNTER'
-          })
-        }
-        if (icrcErrorCount > 0) {
-          portHealthProblems.push({
-            severity: 'warning',
-            summary: `${icrcErrorCount} 个端口有ICRC错误，数据完整性受影响`,
-            kbType: 'BER_WARNING'
-          })
-        }
+        const { problems: portHealthProblems, stats: portHealthStats } = evaluatePortHealth(port_health_data)
 
         return (
           <div className="scroll-area">
@@ -1692,7 +2356,7 @@ function App() {
               <ProblemSummary
                 title="端口健康详情"
                 problems={portHealthProblems}
-                totalChecked={ensureArray(port_health_data).length}
+                totalChecked={portHealthStats.total}
                 dataType="port_health"
               />
 
@@ -1703,6 +2367,8 @@ function App() {
                     <div><strong>ICRC Errors:</strong> {port_health_summary.total_icrc_errors || 0}</div>
                     <div><strong>Parity Errors:</strong> {port_health_summary.total_parity_errors || 0}</div>
                     <div><strong>Unhealthy Ports:</strong> {port_health_summary.unhealthy_ports || 0}</div>
+                    <div><strong>Link Down Events:</strong> {port_health_summary.total_link_down_events || 0}</div>
+                    <div><strong>Link Recovery Events:</strong> {port_health_summary.total_link_recovery_events || 0}</div>
                   </div>
                 </div>
               )}
@@ -1710,7 +2376,6 @@ function App() {
               <PaginatedTable
                 rows={port_health_data}
                 totalRows={port_health_total_rows}
-                serverPreviewLimit={preview_row_limit}
               />
             </div>
           </div>
@@ -1740,7 +2405,6 @@ function App() {
               <PaginatedTable
                 rows={links_data}
                 totalRows={links_total_rows}
-                serverPreviewLimit={preview_row_limit}
               />
             </div>
           </div>
@@ -1767,7 +2431,6 @@ function App() {
               <PaginatedTable
                 rows={qos_data}
                 totalRows={qos_total_rows}
-                serverPreviewLimit={preview_row_limit}
               />
             </div>
           </div>
@@ -1797,7 +2460,6 @@ function App() {
               <PaginatedTable
                 rows={sm_info_data}
                 totalRows={sm_info_total_rows}
-                serverPreviewLimit={preview_row_limit}
               />
             </div>
           </div>
@@ -1832,7 +2494,6 @@ function App() {
               <PaginatedTable
                 rows={port_hierarchy_data}
                 totalRows={port_hierarchy_total_rows}
-                serverPreviewLimit={preview_row_limit}
               />
             </div>
           </div>
@@ -1904,7 +2565,6 @@ function App() {
               <PaginatedTable
                 rows={mlnx_counters_data}
                 totalRows={mlnx_counters_total_rows}
-                serverPreviewLimit={preview_row_limit}
               />
             </div>
           </div>
@@ -1975,7 +2635,6 @@ function App() {
               <PaginatedTable
                 rows={pm_delta_data}
                 totalRows={pm_delta_total_rows}
-                serverPreviewLimit={preview_row_limit}
               />
             </div>
           </div>
@@ -2004,7 +2663,6 @@ function App() {
               <PaginatedTable
                 rows={vports_data}
                 totalRows={vports_total_rows}
-                serverPreviewLimit={preview_row_limit}
               />
             </div>
           </div>
@@ -2039,7 +2697,6 @@ function App() {
               <PaginatedTable
                 rows={pkey_data}
                 totalRows={pkey_total_rows}
-                serverPreviewLimit={preview_row_limit}
               />
             </div>
           </div>
@@ -2088,7 +2745,6 @@ function App() {
               <PaginatedTable
                 rows={system_info_data}
                 totalRows={system_info_total_rows}
-                serverPreviewLimit={preview_row_limit}
               />
             </div>
           </div>
@@ -2127,7 +2783,6 @@ function App() {
               <PaginatedTable
                 rows={extended_port_info_data}
                 totalRows={extended_port_info_total_rows}
-                serverPreviewLimit={preview_row_limit}
               />
             </div>
           </div>
@@ -2159,7 +2814,6 @@ function App() {
               <PaginatedTable
                 rows={ar_info_data}
                 totalRows={ar_info_total_rows}
-                serverPreviewLimit={preview_row_limit}
               />
             </div>
           </div>
@@ -2203,7 +2857,6 @@ function App() {
               <PaginatedTable
                 rows={sharp_data}
                 totalRows={sharp_total_rows}
-                serverPreviewLimit={preview_row_limit}
               />
             </div>
           </div>
@@ -2246,7 +2899,6 @@ function App() {
               <PaginatedTable
                 rows={fec_mode_data}
                 totalRows={fec_mode_total_rows}
-                serverPreviewLimit={preview_row_limit}
               />
             </div>
           </div>
@@ -2276,7 +2928,6 @@ function App() {
               <PaginatedTable
                 rows={phy_diagnostics_data}
                 totalRows={phy_diagnostics_total_rows}
-                serverPreviewLimit={preview_row_limit}
               />
             </div>
           </div>
@@ -2307,7 +2958,6 @@ function App() {
               <PaginatedTable
                 rows={neighbors_data}
                 totalRows={neighbors_total_rows}
-                serverPreviewLimit={preview_row_limit}
               />
             </div>
           </div>
@@ -2337,7 +2987,6 @@ function App() {
               <PaginatedTable
                 rows={buffer_histogram_data}
                 totalRows={buffer_histogram_total_rows}
-                serverPreviewLimit={preview_row_limit}
               />
             </div>
           </div>
@@ -2376,7 +3025,6 @@ function App() {
               <PaginatedTable
                 rows={extended_node_info_data}
                 totalRows={extended_node_info_total_rows}
-                serverPreviewLimit={preview_row_limit}
               />
             </div>
           </div>
@@ -2407,7 +3055,6 @@ function App() {
               <PaginatedTable
                 rows={extended_switch_info_data}
                 totalRows={extended_switch_info_total_rows}
-                serverPreviewLimit={preview_row_limit}
               />
             </div>
           </div>
@@ -2438,7 +3085,6 @@ function App() {
               <PaginatedTable
                 rows={power_sensors_data}
                 totalRows={power_sensors_total_rows}
-                serverPreviewLimit={preview_row_limit}
               />
             </div>
           </div>
@@ -2469,7 +3115,6 @@ function App() {
               <PaginatedTable
                 rows={routing_config_data}
                 totalRows={routing_config_total_rows}
-                serverPreviewLimit={preview_row_limit}
               />
             </div>
           </div>
@@ -2500,7 +3145,6 @@ function App() {
               <PaginatedTable
                 rows={temp_alerts_data}
                 totalRows={temp_alerts_total_rows}
-                serverPreviewLimit={preview_row_limit}
               />
             </div>
           </div>
@@ -2530,7 +3174,6 @@ function App() {
               <PaginatedTable
                 rows={credit_watchdog_data}
                 totalRows={credit_watchdog_total_rows}
-                serverPreviewLimit={preview_row_limit}
               />
             </div>
           </div>
@@ -2567,7 +3210,6 @@ function App() {
               <PaginatedTable
                 rows={pci_performance_data}
                 totalRows={pci_performance_total_rows}
-                serverPreviewLimit={preview_row_limit}
               />
             </div>
           </div>
@@ -2598,7 +3240,6 @@ function App() {
               <PaginatedTable
                 rows={ber_advanced_data}
                 totalRows={ber_advanced_total_rows}
-                serverPreviewLimit={preview_row_limit}
               />
             </div>
           </div>
@@ -2630,7 +3271,6 @@ function App() {
               <PaginatedTable
                 rows={cable_enhanced_data}
                 totalRows={cable_enhanced_total_rows}
-                serverPreviewLimit={preview_row_limit}
               />
             </div>
           </div>
@@ -2667,7 +3307,6 @@ function App() {
               <PaginatedTable
                 rows={per_lane_performance_data}
                 totalRows={per_lane_performance_total_rows}
-                serverPreviewLimit={preview_row_limit}
               />
             </div>
           </div>
@@ -2704,7 +3343,6 @@ function App() {
               <PaginatedTable
                 rows={n2n_security_data}
                 totalRows={n2n_security_total_rows}
-                serverPreviewLimit={preview_row_limit}
               />
             </div>
           </div>
@@ -2763,123 +3401,15 @@ function App() {
         <div className="content">
           {result && result.type === 'ibdiagnet' && (
             <div className="tabs">
-              <div className={`tab ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>
-                <Activity size={16} /> Overview
-              </div>
-              <div className={`tab ${activeTab === 'cable' ? 'active' : ''}`} onClick={() => setActiveTab('cable')}>
-                <Server size={16} /> Cable Issues
-              </div>
-              <div className={`tab ${activeTab === 'xmit' ? 'active' : ''}`} onClick={() => setActiveTab('xmit')}>
-                <AlertTriangle size={16} /> Congestion
-              </div>
-              <div className={`tab ${activeTab === 'ber' ? 'active' : ''}`} onClick={() => setActiveTab('ber')}>
-                <ShieldCheck size={16} /> BER
-              </div>
-              <div className={`tab ${activeTab === 'hca' ? 'active' : ''}`} onClick={() => setActiveTab('hca')}>
-                <Cpu size={16} /> Firmware
-              </div>
-              <div className={`tab ${activeTab === 'latency' ? 'active' : ''}`} onClick={() => setActiveTab('latency')}>
-                <Clock3 size={16} /> Latency
-              </div>
-              <div className={`tab ${activeTab === 'fan' ? 'active' : ''}`} onClick={() => setActiveTab('fan')}>
-                <FanIcon size={16} /> Fans
-              </div>
-              <div className={`tab ${activeTab === 'temperature' ? 'active' : ''}`} onClick={() => setActiveTab('temperature')}>
-                <Thermometer size={16} /> Temp
-              </div>
-              <div className={`tab ${activeTab === 'power' ? 'active' : ''}`} onClick={() => setActiveTab('power')}>
-                <Zap size={16} /> Power
-              </div>
-              <div className={`tab ${activeTab === 'switches' ? 'active' : ''}`} onClick={() => setActiveTab('switches')}>
-                <Network size={16} /> Switches
-              </div>
-              <div className={`tab ${activeTab === 'routing' ? 'active' : ''}`} onClick={() => setActiveTab('routing')}>
-                <GitBranch size={16} /> Routing
-              </div>
-              <div className={`tab ${activeTab === 'port_health' ? 'active' : ''}`} onClick={() => setActiveTab('port_health')}>
-                <Gauge size={16} /> Port Health
-              </div>
-              <div className={`tab ${activeTab === 'links' ? 'active' : ''}`} onClick={() => setActiveTab('links')}>
-                <Link size={16} /> Links
-              </div>
-              <div className={`tab ${activeTab === 'qos' ? 'active' : ''}`} onClick={() => setActiveTab('qos')}>
-                <Layers size={16} /> QoS
-              </div>
-              <div className={`tab ${activeTab === 'sm_info' ? 'active' : ''}`} onClick={() => setActiveTab('sm_info')}>
-                <Settings size={16} /> SM
-              </div>
-              <div className={`tab ${activeTab === 'port_hierarchy' ? 'active' : ''}`} onClick={() => setActiveTab('port_hierarchy')}>
-                <Database size={16} /> Hierarchy
-              </div>
-              <div className={`tab ${activeTab === 'mlnx_counters' ? 'active' : ''}`} onClick={() => setActiveTab('mlnx_counters')}>
-                <ChipIcon size={16} /> MLNX Counters
-              </div>
-              <div className={`tab ${activeTab === 'pm_delta' ? 'active' : ''}`} onClick={() => setActiveTab('pm_delta')}>
-                <BarChart2 size={16} /> PM Delta
-              </div>
-              <div className={`tab ${activeTab === 'vports' ? 'active' : ''}`} onClick={() => setActiveTab('vports')}>
-                <Box size={16} /> VPorts
-              </div>
-              <div className={`tab ${activeTab === 'pkey' ? 'active' : ''}`} onClick={() => setActiveTab('pkey')}>
-                <Key size={16} /> PKEY
-              </div>
-              <div className={`tab ${activeTab === 'system_info' ? 'active' : ''}`} onClick={() => setActiveTab('system_info')}>
-                <Info size={16} /> System
-              </div>
-              <div className={`tab ${activeTab === 'extended_port_info' ? 'active' : ''}`} onClick={() => setActiveTab('extended_port_info')}>
-                <PlugZap size={16} /> Port Ext
-              </div>
-              <div className={`tab ${activeTab === 'ar_info' ? 'active' : ''}`} onClick={() => setActiveTab('ar_info')}>
-                <Shuffle size={16} /> AR
-              </div>
-              <div className={`tab ${activeTab === 'sharp' ? 'active' : ''}`} onClick={() => setActiveTab('sharp')}>
-                <BrainCircuit size={16} /> SHARP
-              </div>
-              <div className={`tab ${activeTab === 'fec_mode' ? 'active' : ''}`} onClick={() => setActiveTab('fec_mode')}>
-                <Shield size={16} /> FEC
-              </div>
-              <div className={`tab ${activeTab === 'phy_diagnostics' ? 'active' : ''}`} onClick={() => setActiveTab('phy_diagnostics')}>
-                <Radio size={16} /> PHY
-              </div>
-              <div className={`tab ${activeTab === 'neighbors' ? 'active' : ''}`} onClick={() => setActiveTab('neighbors')}>
-                <Users size={16} /> Neighbors
-              </div>
-              <div className={`tab ${activeTab === 'buffer_histogram' ? 'active' : ''}`} onClick={() => setActiveTab('buffer_histogram')}>
-                <BarChart3 size={16} /> Buffers
-              </div>
-              <div className={`tab ${activeTab === 'extended_node_info' ? 'active' : ''}`} onClick={() => setActiveTab('extended_node_info')}>
-                <HardDrive size={16} /> Nodes
-              </div>
-              <div className={`tab ${activeTab === 'extended_switch_info' ? 'active' : ''}`} onClick={() => setActiveTab('extended_switch_info')}>
-                <Network size={16} /> Switch Ext
-              </div>
-              <div className={`tab ${activeTab === 'power_sensors' ? 'active' : ''}`} onClick={() => setActiveTab('power_sensors')}>
-                <Zap size={16} /> Sensors
-              </div>
-              <div className={`tab ${activeTab === 'routing_config' ? 'active' : ''}`} onClick={() => setActiveTab('routing_config')}>
-                <Router size={16} /> HBF/PFRN
-              </div>
-              <div className={`tab ${activeTab === 'temp_alerts' ? 'active' : ''}`} onClick={() => setActiveTab('temp_alerts')}>
-                <ThermometerSun size={16} /> Temp Alerts
-              </div>
-              <div className={`tab ${activeTab === 'credit_watchdog' ? 'active' : ''}`} onClick={() => setActiveTab('credit_watchdog')}>
-                <Timer size={16} /> Credit WD
-              </div>
-              <div className={`tab ${activeTab === 'pci_performance' ? 'active' : ''}`} onClick={() => setActiveTab('pci_performance')}>
-                <HardDrive size={16} /> PCIe Perf
-              </div>
-              <div className={`tab ${activeTab === 'ber_advanced' ? 'active' : ''}`} onClick={() => setActiveTab('ber_advanced')}>
-                <BarChart3 size={16} /> BER Adv
-              </div>
-              <div className={`tab ${activeTab === 'cable_enhanced' ? 'active' : ''}`} onClick={() => setActiveTab('cable_enhanced')}>
-                <PlugZap size={16} /> Cable Enh
-              </div>
-              <div className={`tab ${activeTab === 'per_lane_performance' ? 'active' : ''}`} onClick={() => setActiveTab('per_lane_performance')}>
-                <Layers size={16} /> Per-Lane
-              </div>
-              <div className={`tab ${activeTab === 'n2n_security' ? 'active' : ''}`} onClick={() => setActiveTab('n2n_security')}>
-                <Shield size={16} /> N2N Sec
-              </div>
+              {TAB_DEFINITIONS.map(({ key, label, icon: Icon }) => (
+                <div
+                  key={key}
+                  className={`tab ${activeTab === key ? 'active' : ''}`}
+                  onClick={() => setActiveTab(key)}
+                >
+                  {Icon && <Icon size={16} />} {label}
+                </div>
+              ))}
             </div>
           )}
 
@@ -2896,7 +3426,6 @@ function App() {
                       <PaginatedTable
                         rows={result.data.data}
                         totalRows={result.data.row_count}
-                        serverPreviewLimit={null}
                       />
                     </div>
                   </div>

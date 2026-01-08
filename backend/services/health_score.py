@@ -181,15 +181,9 @@ def calculate_health_score(
         max_deduction = weight * 2
         deduction = min(deductions[category], max_deduction)
         score_value = max(0, int(100 - (deduction / max_deduction) * 100))
-        # Validate score is not NaN
-        if not isinstance(score_value, (int, float)) or math.isnan(score_value) or math.isinf(score_value):
-            score_value = 0
         category_scores[category] = score_value
 
     total_score = sum((category_scores[cat] * wt) / 100 for cat, wt in CATEGORY_WEIGHTS.items())
-    # Validate total score is not NaN
-    if math.isnan(total_score) or math.isinf(total_score):
-        total_score = 0
     score = max(0, min(100, int(total_score)))
     grade, status = _get_grade_and_status(score)
     summary = {
@@ -262,26 +256,21 @@ def _check_specific_issues(row: Dict, source: str, issues: List[Issue], deductio
         issues.append(issue)
         deductions["errors"] += (temp - 60) * SEVERITY_MULTIPLIERS[severity]
 
-    link_down = row.get("LinkDownedCounter", row.get("LinkDownedCounterExt", 0))
-    if link_down and int(link_down) > 0:
+    link_down = _to_float(row.get("LinkDownedCounter")) + _to_float(row.get("LinkDownedCounterExt"))
+    if link_down > 0:
+        link_down_count = int(link_down)
         issue = Issue(
             severity=Severity.CRITICAL,
             category="errors",
-            description=f"Link down events: {link_down}",
+            description=f"Link down events: {link_down_count}",
             node_guid=node_guid,
             port_number=port_number,
-            weight=float(link_down),
-            details={"link_down_count": link_down, "source": source},
+            weight=link_down,
+            details={"link_down_count": link_down_count, "source": source},
         )
         _attach_issue_guide(issue, custom_key=ExplanationKey.LINK_DOWN)
         issues.append(issue)
-        deductions["errors"] += float(link_down) * SEVERITY_MULTIPLIERS[Severity.CRITICAL]
-
-    def _to_float(value):
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return 0.0
+        deductions["errors"] += link_down * SEVERITY_MULTIPLIERS[Severity.CRITICAL]
 
     recovery_total = _to_float(row.get("LinkErrorRecoveryCounter")) + _to_float(row.get("LinkErrorRecoveryCounterExt"))
     if recovery_total >= 3:
@@ -332,7 +321,17 @@ def _check_specific_issues(row: Dict, source: str, issues: List[Issue], deductio
             )
             _attach_issue_guide(issue, custom_key=ExplanationKey.PORT_INACTIVE)
             issues.append(issue)
-            deductions["topology"] += SEVERITY_MULTIPLIERS[Severity.WARNING]
+        deductions["topology"] += SEVERITY_MULTIPLIERS[Severity.WARNING]
+
+
+def _to_float(value: Any) -> float:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if math.isnan(numeric) or math.isinf(numeric):
+        return 0.0
+    return numeric
 
 
 def _attach_issue_guide(

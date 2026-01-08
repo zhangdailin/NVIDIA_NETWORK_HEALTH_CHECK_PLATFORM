@@ -4,6 +4,15 @@
 
 ---
 
+## [2.0.1] - 2026-01-08
+
+### 🔧 修复与强化
+- **异常过滤统一化**：`analysis_service` 新增 `_filter_anomalies` 与标识索引，所有表格默认仅返回 IB 分析中判定为异常的端口/节点，Port Health 的 Link Down 计数等关键字段现已稳定呈现。
+- **预览限制解除**：前/后端移除了 2000 行的安全阈值与 `serverPreviewLimit` 提示，`PaginatedTable` 现在直接分页整份异常列表，并在提示语中说明“仅展示异常行”。
+- **BER 格式对齐**：`ber_service`/`ber_advanced_service` 及前端 `BERAnalysis` 统一使用 `1.50E-254` 样式（两位小数、`E` 大写、`0.00E+00`），与 `/test_data/ber(1).csv` 及 IB-Anslysis-Pro 输出保持一致。
+
+---
+
 ## [2.0.0] - 2026-01-07
 
 ### 🎉 重大优化版本
