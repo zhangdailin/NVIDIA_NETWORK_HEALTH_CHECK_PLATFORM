@@ -56,9 +56,9 @@ ANOMALY_CATEGORIES = {
     AnomlyType.IBH_RED_FLAG: ("errors", Severity.CRITICAL),
     AnomlyType.IBH_UNUSUAL_RTT_NUM: ("congestion", Severity.INFO),
     AnomlyType.IBH_HIGH_MIN_RTT: ("latency", Severity.WARNING),
-    AnomlyType.IBH_ASYM_TOPO: ("topology", Severity.WARNING),
-    AnomlyType.IBH_DUPLICATE_GUID: ("topology", Severity.WARNING),
-    AnomlyType.IBH_DUPLICATE_DESC: ("topology", Severity.INFO),
+    AnomlyType.IBH_ASYM_TOPO: ("config", Severity.WARNING),
+    AnomlyType.IBH_DUPLICATE_GUID: ("config", Severity.WARNING),
+    AnomlyType.IBH_DUPLICATE_DESC: ("config", Severity.INFO),
     AnomlyType.IBH_OPTICAL_TEMP_HIGH: ("errors", Severity.WARNING),
     AnomlyType.IBH_OPTICAL_TX_BIAS: ("errors", Severity.WARNING),
     AnomlyType.IBH_OPTICAL_TX_POWER: ("errors", Severity.WARNING),
@@ -70,7 +70,7 @@ ANOMALY_CATEGORIES = {
     AnomlyType.IBH_PSID_UNSUPPORTED: ("config", Severity.CRITICAL),
     AnomlyType.IBH_FW_OUTDATED: ("config", Severity.WARNING),
     AnomlyType.IBH_CABLE_MISMATCH: ("config", Severity.WARNING),
-    AnomlyType.IBH_LINK_DOWNSHIFT: ("topology", Severity.WARNING),
+    AnomlyType.IBH_LINK_DOWNSHIFT: ("errors", Severity.WARNING),
     AnomlyType.IBH_CREDIT_WATCHDOG: ("congestion", Severity.CRITICAL),
     AnomlyType.IBH_FAN_FAILURE: ("errors", Severity.WARNING),
     # New anomaly types for routing, port health, links, temperature, power
@@ -80,7 +80,7 @@ ANOMALY_CATEGORIES = {
     AnomlyType.IBH_PORT_ICRC_ERROR: ("errors", Severity.WARNING),
     AnomlyType.IBH_PORT_PARITY_ERROR: ("errors", Severity.CRITICAL),
     AnomlyType.IBH_PORT_UNHEALTHY: ("errors", Severity.CRITICAL),
-    AnomlyType.IBH_LINK_ASYMMETRIC: ("topology", Severity.WARNING),
+    AnomlyType.IBH_LINK_ASYMMETRIC: ("errors", Severity.WARNING),
     AnomlyType.IBH_TEMP_CRITICAL: ("errors", Severity.CRITICAL),
     AnomlyType.IBH_TEMP_WARNING: ("errors", Severity.WARNING),
     AnomlyType.IBH_PSU_CRITICAL: ("errors", Severity.CRITICAL),
@@ -96,10 +96,9 @@ CATEGORY_WEIGHTS = {
     "ber": 25,
     "errors": 25,
     "congestion": 20,
-    "topology": 10,
     "latency": 10,
     "balance": 5,
-    "config": 3,
+    "config": 13,
     "anomaly": 2,
 }
 
@@ -118,12 +117,10 @@ def calculate_health_score(
     hca_data: List[Dict],
     fan_data: Optional[List[Dict]] = None,
     histogram_data: Optional[List[Dict]] = None,
-    topology_rows: Optional[List[Dict]] = None,
     extra_sources: Optional[List[Tuple[str, List[Dict[str, Any]]]]] = None,
 ) -> HealthReport:
     fan_data = fan_data or []
     histogram_data = histogram_data or []
-    topology_rows = topology_rows or []
     issues: List[Issue] = []
     deductions: Dict[str, float] = {cat: 0.0 for cat in CATEGORY_WEIGHTS}
 
@@ -135,7 +132,6 @@ def calculate_health_score(
         ("hca", hca_data),
         ("fan", fan_data),
         ("histogram", histogram_data),
-        ("topology", topology_rows),
     ]
     if extra_sources:
         all_sources.extend(extra_sources)

@@ -13,6 +13,8 @@ import FaultSummary from './FaultSummary'
 import CableAnalysis from './CableAnalysis'
 import BERAnalysis from './BERAnalysis'
 import CongestionAnalysis from './CongestionAnalysis'
+import HealthCheckBoard from './HealthCheckBoard'
+import { HEALTH_CHECK_GROUPS, HEALTH_CHECK_DEFINITIONS } from './healthCheckDefinitions'
 import './App.css'
 
 // Configuration - use relative URL for proxy support
@@ -64,47 +66,69 @@ const hasAlarmFlag = (value) => {
   }
 }
 
-const TAB_DEFINITIONS = [
-  { key: 'overview', label: 'Overview', icon: Activity },
-  { key: 'cable', label: 'Cable Issues', icon: Server },
-  { key: 'xmit', label: 'Congestion', icon: AlertTriangle },
-  { key: 'ber', label: 'BER', icon: ShieldCheck },
-  { key: 'hca', label: 'Firmware', icon: Cpu },
-  { key: 'latency', label: 'Latency', icon: Clock3 },
-  { key: 'fan', label: 'Fans', icon: FanIcon },
-  { key: 'temperature', label: 'Temp', icon: Thermometer },
-  { key: 'power', label: 'Power', icon: Zap },
-  { key: 'switches', label: 'Switches', icon: Network },
-  { key: 'routing', label: 'Routing', icon: GitBranch },
-  { key: 'port_health', label: 'Port Health', icon: Gauge },
-  { key: 'links', label: 'Links', icon: Link },
-  { key: 'qos', label: 'QoS', icon: Layers },
-  { key: 'sm_info', label: 'SM', icon: Settings },
-  { key: 'port_hierarchy', label: 'Hierarchy', icon: Database },
-  { key: 'mlnx_counters', label: 'MLNX Counters', icon: ChipIcon },
-  { key: 'pm_delta', label: 'PM Delta', icon: BarChart2 },
-  { key: 'vports', label: 'VPorts', icon: Box },
-  { key: 'pkey', label: 'PKEY', icon: Key },
-  { key: 'system_info', label: 'System', icon: Info },
-  { key: 'extended_port_info', label: 'Port Ext', icon: PlugZap },
-  { key: 'ar_info', label: 'AR', icon: Shuffle },
-  { key: 'sharp', label: 'SHARP', icon: BrainCircuit },
-  { key: 'fec_mode', label: 'FEC', icon: Shield },
-  { key: 'phy_diagnostics', label: 'PHY', icon: Radio },
-  { key: 'neighbors', label: 'Neighbors', icon: Users },
-  { key: 'buffer_histogram', label: 'Buffers', icon: BarChart3 },
-  { key: 'extended_node_info', label: 'Nodes', icon: HardDrive },
-  { key: 'extended_switch_info', label: 'Switch Ext', icon: Network },
-  { key: 'power_sensors', label: 'Sensors', icon: Zap },
-  { key: 'routing_config', label: 'HBF/PFRN', icon: Router },
-  { key: 'temp_alerts', label: 'Temp Alerts', icon: ThermometerSun },
-  { key: 'credit_watchdog', label: 'Credit WD', icon: Timer },
-  { key: 'pci_performance', label: 'PCIe Perf', icon: HardDrive },
-  { key: 'ber_advanced', label: 'BER Adv', icon: BarChart3 },
-  { key: 'cable_enhanced', label: 'Cable Enh', icon: PlugZap },
-  { key: 'per_lane_performance', label: 'Per-Lane', icon: Layers },
-  { key: 'n2n_security', label: 'N2N Sec', icon: Shield },
+const TAB_ICON_MAP = {
+  overview: Activity,
+  cable: Server,
+  cable_enhanced: PlugZap,
+  port_health: Gauge,
+  links: Link,
+  xmit: AlertTriangle,
+  latency: Clock3,
+  per_lane_performance: Layers,
+  ber: ShieldCheck,
+  ber_advanced: BarChart3,
+  hca: Cpu,
+  system_info: Info,
+  sm_info: Settings,
+  fan: FanIcon,
+  temperature: Thermometer,
+  power: Zap,
+  power_sensors: Zap,
+  temp_alerts: ThermometerSun,
+  switches: Network,
+  routing: GitBranch,
+  routing_config: Router,
+  port_hierarchy: Database,
+  qos: Layers,
+  n2n_security: Shield,
+  pkey: Key,
+  vports: Box,
+  mlnx_counters: ChipIcon,
+  pm_delta: BarChart2,
+  pci_performance: HardDrive,
+  ar_info: Shuffle,
+  sharp: BrainCircuit,
+  fec_mode: Shield,
+  credit_watchdog: Timer,
+  phy_diagnostics: Radio,
+  extended_port_info: PlugZap,
+  extended_node_info: HardDrive,
+  extended_switch_info: Network,
+  buffer_histogram: BarChart3,
+  neighbors: Users,
+}
+
+const TAB_GROUPS = HEALTH_CHECK_GROUPS.map(group => ({
+  ...group,
+  tabs: group.checks.map(checkKey => {
+    const definition = HEALTH_CHECK_DEFINITIONS[checkKey] || { label: checkKey }
+    return {
+      key: checkKey,
+      label: definition.label || checkKey,
+      icon: TAB_ICON_MAP[checkKey] || Activity,
+    }
+  }),
+}))
+
+const TAB_LIST = [
+  { key: 'overview', label: '总览', icon: Activity },
+  ...TAB_GROUPS.flatMap(group => group.tabs),
 ]
+
+const TAB_LOOKUP = TAB_LIST.reduce((acc, tab) => {
+  acc[tab.key] = tab
+  return acc
+}, {})
 
 const buildActionPlan = (issues = []) => {
   const safeIssues = ensureArray(issues)
@@ -519,7 +543,7 @@ function InsightCard({ title, subtitle, description, actions = [], severity = 'i
   )
 }
 
-const resolveTabMeta = (key) => TAB_DEFINITIONS.find(tab => tab.key === key) || { label: key, icon: Activity }
+const resolveTabMeta = (key) => TAB_LOOKUP[key] || { label: key, icon: Activity }
 
 const summarizeCableHealth = (rows = []) => {
   const safeRows = ensureArray(rows)
@@ -1062,265 +1086,6 @@ const summarizeN2NSecurity = (summary = {}, rows = []) => {
       : (coveragePct && coveragePct < 80 ? 'warning' : 'info'),
   }
 }
-
-const HIGHLIGHT_BUILDERS = [
-  {
-    key: 'cable',
-    title: '线缆与光模块',
-    description: '温度 / 光功率 / 规格一致性',
-    build: ({ cable_data }) => {
-      const stats = summarizeCableHealth(cable_data)
-      if (!stats.total) return null
-      return {
-        severity: stats.severity,
-        valueLabel: `${stats.critical} 严重`,
-        metrics: [
-          `${stats.warning} 警告`,
-          `${stats.total} 条记录`
-        ]
-      }
-    }
-  },
-  {
-    key: 'xmit',
-    title: '拥塞与错误 (Xmit)',
-    description: 'WaitRatio / FECN / BECN / XmitCongestion',
-    build: ({ xmit_data }) => {
-      const stats = summarizeCongestionHealth(xmit_data)
-      if (!stats.total) return null
-      return {
-        severity: stats.severity,
-        valueLabel: `${stats.critical} 严重`,
-        metrics: [
-          `${stats.warning} 警告`,
-          `${stats.total} 端口`
-        ]
-      }
-    }
-  },
-  {
-    key: 'ber',
-    title: 'BER 状态',
-    description: 'Symbol / Effective / Raw BER',
-    build: ({ ber_data, ber_advanced_data }) => {
-      const summary = summarizeBerHealth(ber_data, ber_advanced_data)
-      if (!summary.total) return null
-      return {
-        severity: summary.severity,
-        valueLabel: `${summary.criticalCount} 严重`,
-        metrics: [
-          `${summary.warningCount} 警告`,
-          `${summary.total} 端口`
-        ]
-      }
-    }
-  },
-  {
-    key: 'hca',
-    title: 'HCA / 固件',
-    description: 'FW / PSID / PCI / ibdiagnet WARNINGS',
-    build: ({ hca_data, firmwareWarnings, pciWarnings }) => {
-      const { stats } = evaluateFirmwareHealth(hca_data, firmwareWarnings, pciWarnings)
-      if (!stats.total) return null
-      return {
-        severity: stats.severity,
-        valueLabel: `${stats.outdatedFwCount + stats.pciWarningCount} 风险`,
-        metrics: [
-          `${stats.psidIssueCount} PSID`,
-          `${stats.total} 设备`
-        ]
-      }
-    }
-  },
-  {
-    key: 'latency',
-    title: '延迟直方图',
-    description: 'P99/Median、Upper bucket、抖动',
-    build: ({ histogram_data }) => {
-      const { stats } = evaluateLatencyHealth(histogram_data)
-      if (!stats.total) return null
-      return {
-        severity: stats.severity,
-        valueLabel: `${stats.highP99Count} 高P99`,
-        metrics: [
-          `${stats.upperBucketCount} 高桶`,
-          `${stats.jitterCount} 抖动`
-        ]
-      }
-    }
-  },
-  {
-    key: 'fan',
-    title: '风扇与机箱',
-    description: '速度 / Alert / Deviations',
-    build: ({ fan_data }) => {
-      const { stats } = evaluateFanHealth(fan_data)
-      if (!stats.total) return null
-      return {
-        severity: stats.severity,
-        valueLabel: `${Math.max(stats.lowSpeedCount, stats.alertCount)} 告警`,
-        metrics: [
-          `${stats.highSpeedCount} 高速`,
-          `${stats.total} 传感器`
-        ]
-      }
-    }
-  },
-  {
-    key: 'temperature',
-    title: '温度监控',
-    description: '温度传感器健康度',
-    build: ({ temperature_data }) => {
-      const { stats } = evaluateTemperatureHealth(temperature_data)
-      if (!stats.total) return null
-      return {
-        severity: stats.severity,
-        valueLabel: `${stats.criticalCount} 严重`,
-        metrics: [
-          `${stats.warningCount} 警告`,
-          `${stats.total} 传感器`
-        ]
-      }
-    }
-  },
-  {
-    key: 'power',
-    title: '电源状态',
-    description: 'PSU 告警 / 缺失 / 总功耗',
-    build: ({ power_data }) => {
-      const { stats } = evaluatePowerHealth(power_data)
-      if (!stats.total) return null
-      return {
-        severity: stats.severity,
-        valueLabel: `${stats.psuCriticalCount} 严重`,
-        metrics: [
-          `${stats.psuWarningCount} 告警`,
-          `${stats.notPresentCount} 未安装`
-        ]
-      }
-    }
-  },
-  {
-    key: 'routing',
-    title: '自适应路由',
-    description: 'RN / FR / HBF',
-    build: ({ routing_data }) => {
-      const { stats } = evaluateRoutingHealth(routing_data)
-      if (!stats.total) return null
-      return {
-        severity: stats.severity,
-        valueLabel: `${stats.frErrorCount} FR 错误`,
-        metrics: [
-          `${stats.rnErrorCount} RN`,
-          `${stats.hbfFallbackCount} HBF 回退`
-        ]
-      }
-    }
-  },
-  {
-    key: 'port_health',
-    title: '端口健康',
-    description: 'ICRC / Parity / Unhealthy Ports',
-    build: ({ port_health_data }) => {
-      const { stats } = evaluatePortHealth(port_health_data)
-      if (!stats.total) return null
-      return {
-        severity: stats.severity,
-        valueLabel: `${stats.unhealthyCount || 0} 不健康`,
-        metrics: [
-          `${stats.parityErrorCount} Parity`,
-          `${stats.icrcErrorCount} ICRC`,
-          `${stats.linkDownPortCount || 0} LinkDown`
-        ]
-      }
-    }
-  },
-  {
-    key: 'n2n_security',
-    title: '端到端安全',
-    description: 'N2N 启用率 / Key 覆盖率 / 违规',
-    build: ({ n2n_security_summary, n2n_security_data }) => {
-      const stats = summarizeN2NSecurity(n2n_security_summary, n2n_security_data)
-      if (!stats.totalNodes) return null
-      return {
-        severity: stats.severity,
-        valueLabel: `${stats.violations} 违规`,
-        metrics: [
-          `覆盖率 ${stats.coveragePct || 0}%`,
-          `${stats.nodesWithKeys || 0} 节点有密钥`
-        ]
-      }
-    }
-  }
-]
-
-const buildOverviewHighlights = (context = {}) => {
-  return HIGHLIGHT_BUILDERS
-    .map(builder => {
-      const payload = builder.build(context)
-      if (!payload) return null
-      const meta = resolveTabMeta(builder.key)
-      return {
-        key: builder.key,
-        icon: meta.icon || Activity,
-        title: builder.title || meta.label || builder.key,
-        description: builder.description,
-        ...payload,
-      }
-    })
-    .filter(Boolean)
-}
-
-const getSeverityStatus = (severity) => {
-  switch (severity) {
-    case 'critical':
-      return '需要处理'
-    case 'warning':
-      return '待观察'
-    default:
-      return '正常'
-  }
-}
-
-function OverviewHighlights({ items = [], onSelectTab }) {
-  if (!items.length) return null
-
-  return (
-    <div className="overview-grid">
-      {items.map(item => {
-        const Icon = item.icon || Activity
-        return (
-          <button
-            key={item.key}
-            type="button"
-            className={`overview-card ${item.severity}`}
-            onClick={() => onSelectTab?.(item.key)}
-          >
-            <div className="overview-card-header">
-              <div className="overview-card-title">
-                <Icon size={18} />
-                <span>{item.title}</span>
-              </div>
-              <span className={`overview-card-status ${item.severity}`}>
-                {item.statusLabel || getSeverityStatus(item.severity)}
-              </span>
-            </div>
-            {item.description && <p className="overview-card-description">{item.description}</p>}
-            <div className="overview-card-value">{item.valueLabel}</div>
-            {item.metrics?.length > 0 && (
-              <div className="overview-metrics">
-                {item.metrics.map((metric, idx) => (
-                  <span key={`${item.key}-metric-${idx}`}>{metric}</span>
-                ))}
-              </div>
-            )}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
 // Health Score Component
 function HealthScore({ health }) {
   if (!health) return null
@@ -1906,26 +1671,32 @@ function App() {
     switch (activeTab) {
       case 'overview': {
         const actionPlan = buildActionPlan(health?.issues || [])
-        const highlightContext = {
-          cable_data,
-          xmit_data,
-          ber_data,
-          ber_advanced_data,
-          hca_data,
-          firmwareWarnings,
-          pciWarnings,
-          histogram_data,
-          fan_data,
-          temperature_data,
-          power_data,
-          routing_data,
-          port_health_data,
-          n2n_security_summary,
-          n2n_security_data,
-        }
-        const overviewHighlights = buildOverviewHighlights(highlightContext)
         const berSnapshot = summarizeBerHealth(ber_data, ber_advanced_data)
         const berTopList = berSnapshot.topCritical.length > 0 ? berSnapshot.topCritical : berSnapshot.topWarning
+        const warningCategories = Object.entries(warnings_by_category || {})
+          .map(([category, entries]) => {
+            const list = ensureArray(entries)
+            if (!list.length) return null
+            const severity = list.some(item => String(item?.severity || item?.level || '').toLowerCase() === 'critical')
+              ? 'critical'
+              : 'warning'
+            const samples = list.slice(0, 3).map(item => (
+              item?.summary ||
+              item?.message ||
+              item?.description ||
+              item?.code ||
+              item?.title ||
+              'IBDiagnet warning'
+            ))
+            return {
+              category,
+              count: list.length,
+              severity,
+              samples,
+            }
+          })
+          .filter(Boolean)
+          .sort((a, b) => b.count - a.count)
 
         return (
           <div className="scroll-area">
@@ -1942,13 +1713,42 @@ function App() {
               <HealthScore health={health} />
             </div>
 
-            {overviewHighlights.length > 0 && (
+            <div className="card">
+              <div className="card-header-row">
+                <h2>健康检查看板</h2>
+                <p className="card-subtitle">统一展示 AnalysisService 返回的检查项，点击卡片跳转标签</p>
+              </div>
+              <HealthCheckBoard
+                payload={result.data}
+                onSelectTab={setActiveTab}
+                resolveTabMeta={resolveTabMeta}
+              />
+            </div>
+
+            {warningCategories.length > 0 && (
               <div className="card">
                 <div className="card-header-row">
-                  <h2>关键分析区域概览</h2>
-                  <p className="card-subtitle">点击卡片跳转到对应标签页</p>
+                  <h2>IBDiagnet 警告分类</h2>
+                  <p className="card-subtitle">来自 warnings_by_category 的结构化告警</p>
                 </div>
-                <OverviewHighlights items={overviewHighlights} onSelectTab={setActiveTab} />
+                <div className="warning-category-grid">
+                  {warningCategories.map(entry => (
+                    <div
+                      key={entry.category}
+                      className={`warning-category-card warning-${entry.severity}`}
+                    >
+                      <div className="warning-category-header">
+                        <strong>{entry.category}</strong>
+                        <span className="warning-chip">{entry.count}</span>
+                      </div>
+                      <ul>
+                        {entry.samples.map((sample, idx) => (
+                          <li key={`${entry.category}-${idx}`}>{sample}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -3400,14 +3200,30 @@ function App() {
 
         <div className="content">
           {result && result.type === 'ibdiagnet' && (
-            <div className="tabs">
-              {TAB_DEFINITIONS.map(({ key, label, icon: Icon }) => (
-                <div
-                  key={key}
-                  className={`tab ${activeTab === key ? 'active' : ''}`}
-                  onClick={() => setActiveTab(key)}
-                >
-                  {Icon && <Icon size={16} />} {label}
+            <div className="tabs grouped-tabs">
+              <div
+                className={`tab overview-tab ${activeTab === 'overview' ? 'active' : ''}`}
+                onClick={() => setActiveTab('overview')}
+              >
+                <Activity size={16} /> 总览
+              </div>
+              {TAB_GROUPS.map(group => (
+                <div key={group.key} className="tab-group">
+                  <div className="tab-group-header">
+                    <h4>{group.label}</h4>
+                    <span>{group.description}</span>
+                  </div>
+                  <div className="tab-group-tabs">
+                    {group.tabs.map(({ key, label, icon: Icon }) => (
+                      <div
+                        key={key}
+                        className={`tab ${activeTab === key ? 'active' : ''}`}
+                        onClick={() => setActiveTab(key)}
+                      >
+                        {Icon && <Icon size={16} />} {label}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>

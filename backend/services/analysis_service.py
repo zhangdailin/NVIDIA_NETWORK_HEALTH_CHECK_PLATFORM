@@ -62,8 +62,6 @@ from .switch_service import SwitchService
 from .system_info_service import SystemInfoService
 from .temp_alerts_service import TempAlertsService
 from .temperature_service import TemperatureService
-from .topology_checker import TopologyChecker
-from .topology_diff_service import TopologyDiffService
 from .vports_service import VPortsService
 from .warnings_service import WarningsService
 from .xmit_service import XmitService
@@ -496,9 +494,6 @@ class AnalysisService:
             hca_rows,
         )
         analysis_rows = brief_payload["data"]
-        topology_checker = TopologyChecker(target_dir)
-        topology_rows = topology_checker.to_issue_rows()
-        topology_rows.extend(self._expected_topology_rows(target_dir))
         extra_sources = [
             ("cable", cable_anomalies),
             ("xmit", xmit_anomalies),
@@ -639,7 +634,6 @@ class AnalysisService:
             hca_data=hca_rows,
             fan_data=fan_rows,
             histogram_data=histogram_rows,
-            topology_rows=topology_rows,
             extra_sources=extra_sources,
         )
         health = health_report_to_dict(health_report)
@@ -774,7 +768,6 @@ class AnalysisService:
             "n2n_security_summary": n2n_security_analysis.summary,
             "warnings_by_category": warnings_by_category,
             "warnings_summary": warnings_summary,
-            "topology_data": topology_rows,
             "debug_stdout": brief_payload.get("debug_stdout", ""),
             "debug_stderr": brief_payload.get("debug_stderr", ""),
             "preview_row_limit": MAX_PREVIEW_ROWS,
@@ -1213,20 +1206,6 @@ class AnalysisService:
             return False
         return True
 
-    def _expected_topology_rows(self, dataset_root: Path) -> List[Dict[str, object]]:
-        if not self._expected_topology_path:
-            return []
-        try:
-            service = TopologyDiffService(
-                dataset_root=dataset_root,
-                expected_topology_file=self._expected_topology_path,
-            )
-            return service.diff_rows()
-        except FileNotFoundError:
-            logger.warning("Expected topology file %s not found", self._expected_topology_path)
-        except Exception as exc:  # pragma: no cover
-            logger.warning("Failed to compute topology diff: %s", exc)
-        return []
 
     @staticmethod
     def _column_to_anomaly(column: str) -> Optional[AnomlyType]:
