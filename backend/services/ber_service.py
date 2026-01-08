@@ -61,6 +61,7 @@ class BerService:
         self._topology: TopologyLookup | None = None
         self._pm_counters_df: pd.DataFrame | None = None
         self._index_table: pd.DataFrame | None = None
+        self._phy_db16_df: pd.DataFrame | None = None
 
     def clear_cache(self):
         """Clear cached DataFrames to free memory."""
@@ -106,16 +107,17 @@ class BerService:
             return self._df
 
         net_dump_df = self._parse_net_dump_file()
-        if not net_dump_df.empty:
-            net_dump_df["RawBERValue"] = net_dump_df["Raw BER"].apply(self._parse_ber_string)
-            net_dump_df["EffectiveBERValue"] = net_dump_df["Effective BER"].apply(self._parse_ber_string)
-            net_dump_df["SymbolBERValue"] = net_dump_df["Symbol BER"].apply(self._parse_ber_string)
-            net_dump_df["Log10 Raw BER"] = net_dump_df["RawBERValue"].apply(self._safe_log10)
-            net_dump_df["Log10 Effective BER"] = net_dump_df["EffectiveBERValue"].apply(self._safe_log10)
-            net_dump_df["Log10 Symbol BER"] = net_dump_df["SymbolBERValue"].apply(self._safe_log10)
-            net_dump_df = net_dump_df.dropna(subset=["RawBERValue", "EffectiveBERValue", "SymbolBERValue"], how="all")
-            net_dump_df = self._merge_pm_counters(net_dump_df)
-            self._df = net_dump_df
+        phy_df = self._load_phy_db16_dataframe()
+        combined_df = self._combine_ber_sources(net_dump_df, phy_df)
+
+        if not combined_df.empty:
+            combined_df = self._ensure_numeric_ber_columns(combined_df)
+            combined_df = combined_df.dropna(
+                subset=["RawBERValue", "EffectiveBERValue", "SymbolBERValue"],
+                how="all"
+            )
+            combined_df = self._merge_pm_counters(combined_df)
+            self._df = combined_df
             return self._df
 
         logger.warning(
@@ -393,6 +395,136 @@ class BerService:
 
         return pd.DataFrame(records)
 
+    def _load_phy_db16_dataframe(self) -> pd.DataFrame:
+        if self._phy_db16_df is not None:
+            return self._phy_db16_df
+
+        try:
+            index_table = self._get_index_table()
+        except FileNotFoundError:
+            self._phy_db16_df = pd.DataFrame()
+            return self._phy_db16_df
+
+        if "PHY_DB16" not in index_table.index:
+            self._phy_db16_df = pd.DataFrame()
+            return self._phy_db16_df
+
+        try:
+            phy_df = read_table(self._find_db_csv(), "PHY_DB16", index_table)
+        except Exception as exc:  # pragma: no cover - corrupt dataset
+            logger.warning("Failed to read PHY_DB16 table: %s", exc)
+            self._phy_db16_df = pd.DataFrame()
+            return self._phy_db16_df
+
+        if phy_df.empty:
+            self._phy_db16_df = pd.DataFrame()
+            return self._phy_db16_df
+
+        phy_df = phy_df.rename(columns={"NodeGuid": "NodeGUID", "PortNum": "PortNumber"})
+        phy_df["NodeGUID"] = phy_df.apply(self._remove_redundant_zero, axis=1)
+        phy_df["PortNumber"] = pd.to_numeric(phy_df["PortNumber"], errors="coerce")
+        phy_df = phy_df.dropna(subset=["NodeGUID", "PortNumber"])
+
+        records: List[Dict[str, object]] = []
+        mappings = [
+            ("Raw BER", "RawBERValue", "Log10 Raw BER", "field12", "field13"),
+            ("Effective BER", "EffectiveBERValue", "Log10 Effective BER", "field14", "field15"),
+            ("Symbol BER", "SymbolBERValue", "Log10 Symbol BER", "field16", "field17"),
+        ]
+
+        for _, row in phy_df.iterrows():
+            node_guid = row["NodeGUID"]
+            port_number = int(row["PortNumber"])
+            payload = {"NodeGUID": node_guid, "PortNumber": port_number}
+            for string_col, value_col, log_col, mantissa_col, exponent_col in mappings:
+                mantissa = row.get(mantissa_col)
+                exponent = row.get(exponent_col)
+                value = self._mantissa_exponent_to_value(mantissa, exponent)
+                payload[value_col] = value
+                if value is not None:
+                    payload[string_col] = self._format_ber_value(value)
+                    payload[log_col] = self._safe_log10(value)
+            payload["SymbolBERLog10Value"] = payload.get("Log10 Symbol BER")
+            records.append(payload)
+
+        if not records:
+            self._phy_db16_df = pd.DataFrame()
+            return self._phy_db16_df
+
+        self._phy_db16_df = pd.DataFrame(records)
+        return self._phy_db16_df
+
+    def _combine_ber_sources(self, net_dump_df: pd.DataFrame, phy_df: pd.DataFrame) -> pd.DataFrame:
+        if net_dump_df is None or net_dump_df.empty:
+            if phy_df is None:
+                return pd.DataFrame()
+            df = phy_df.copy()
+            if "Symbol Err" not in df.columns:
+                df["Symbol Err"] = 0
+            if "Effective Err" not in df.columns:
+                df["Effective Err"] = 0
+            return df
+        if phy_df is None or phy_df.empty:
+            return net_dump_df
+
+        net = net_dump_df.set_index(["NodeGUID", "PortNumber"])
+        phy = phy_df.set_index(["NodeGUID", "PortNumber"])
+        combined_index = net.index.union(phy.index)
+        net = net.reindex(combined_index)
+        phy = phy.reindex(combined_index)
+        merged = net.copy()
+
+        for column in phy.columns:
+            if column not in merged.columns:
+                merged[column] = None
+
+        override_columns = [
+            "Raw BER",
+            "Effective BER",
+            "Symbol BER",
+            "RawBERValue",
+            "EffectiveBERValue",
+            "SymbolBERValue",
+            "Log10 Raw BER",
+            "Log10 Effective BER",
+            "Log10 Symbol BER",
+            "SymbolBERLog10Value",
+        ]
+        for column in override_columns:
+            if column in phy.columns:
+                merged[column] = phy[column].combine_first(merged[column])
+
+        merged = merged.reset_index()
+        for column in ("Symbol Err", "Effective Err"):
+            if column not in merged.columns:
+                merged[column] = 0
+            merged[column] = pd.to_numeric(merged[column], errors="coerce").fillna(0).astype(int)
+        return merged
+
+    def _ensure_numeric_ber_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        column_map = [
+            ("Raw BER", "RawBERValue", "Log10 Raw BER"),
+            ("Effective BER", "EffectiveBERValue", "Log10 Effective BER"),
+            ("Symbol BER", "SymbolBERValue", "Log10 Symbol BER"),
+        ]
+        for string_col, value_col, log_col in column_map:
+            if string_col not in df.columns:
+                df[string_col] = None
+            existing_values = pd.to_numeric(df.get(value_col), errors="coerce")
+            needs_recalc = existing_values.isna()
+            if needs_recalc.any():
+                parsed = df.loc[needs_recalc, string_col].apply(self._parse_ber_string)
+                existing_values.loc[needs_recalc] = parsed
+            df[value_col] = existing_values
+            df[log_col] = df[value_col].apply(self._safe_log10)
+
+        if "SymbolBERLog10Value" not in df.columns:
+            df["SymbolBERLog10Value"] = df["Log10 Symbol BER"]
+        else:
+            mask = df["SymbolBERLog10Value"].isna()
+            df.loc[mask, "SymbolBERLog10Value"] = df.loc[mask, "Log10 Symbol BER"]
+        return df
+
     @staticmethod
     def _normalize_guid_text(value: str) -> str:
         text = value.strip()
@@ -423,6 +555,24 @@ class BerService:
         if value <= 0:
             return None
         return math.log10(value)
+
+    @staticmethod
+    def _mantissa_exponent_to_value(mantissa: object, exponent: object) -> Optional[float]:
+        try:
+            mantissa_value = float(mantissa)
+            exponent_value = float(exponent)
+        except (TypeError, ValueError):
+            return None
+        if mantissa_value == 0:
+            return None
+        # Some PHY_DB16 rows store placeholder exponents in the billions when the value is absent.
+        # Treat anything wildly out of range as missing so we can fall back to net_dump_ext numbers.
+        if exponent_value > 1000:
+            return None
+        try:
+            return mantissa_value * math.pow(10.0, -exponent_value)
+        except OverflowError:
+            return None
 
     @staticmethod
     def _format_ber_value(value: object) -> str:
