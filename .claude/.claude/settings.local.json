@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pip list:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(dir:*)",
+      "Bash(grep:*)",
+      "Bash(python:*)",
+      "Bash(git checkout:*)"
+    ]
+  }
+}

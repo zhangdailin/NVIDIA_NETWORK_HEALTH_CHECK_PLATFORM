@@ -1,28 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python -m pip list)",
-      "Bash(xcopy /E /I /Y \"D:\\\\Github Code HUB\\\\IB-Anslysis-Pro\\\\src\\\\ib_analysis\" \"D:\\\\Github Code HUB\\\\AI知识助手\\\\NVIDIA_NETWORK_HEALTH_CHECK_PLATFORM\\\\backend\\\\ib_analysis\")",
-      "Bash(powershell -Command \"Copy-Item -Path ''D:\\\\Github Code HUB\\\\IB-Anslysis-Pro\\\\src\\\\ib_analysis'' -Destination ''D:\\\\Github Code HUB\\\\AI知识助手\\\\NVIDIA_NETWORK_HEALTH_CHECK_PLATFORM\\\\backend\\\\ib_analysis'' -Recurse -Force\")",
-      "Bash(powershell -Command \"Get-ChildItem ''D:\\\\Github Code HUB\\\\AI知识助手\\\\NVIDIA_NETWORK_HEALTH_CHECK_PLATFORM\\\\backend\\\\ib_analysis'' -Name\")",
-      "WebFetch(domain:docs.nvidia.com)",
-      "WebSearch",
-      "Bash(npm install)",
-      "Bash(python -c \"from ib_analysis.config import get_config; print\\(''OK''\\)\")",
-      "Bash(python -c \"from ib_analysis.health_score import calculate_health_score; print\\(''OK''\\)\")",
-      "Bash(python -c \"from api import router; print\\(''OK''\\)\")",
-      "Bash(pip install python-multipart)",
-      "Bash(mkdir:*)",
-      "Bash(python -c:*)",
-      "Bash(npm run build)",
-      "Bash(python:*)",
-      "Bash(tree:*)",
-      "Bash(del \"D:\\\\Github Code HUB\\\\AI知识助手\\\\NVIDIA_NETWORK_HEALTH_CHECK_PLATFORM\\\\backend\\\\ib_analysis\\\\cli.py\")",
-      "Bash(del \"D:\\\\Github Code HUB\\\\AI知识助手\\\\NVIDIA_NETWORK_HEALTH_CHECK_PLATFORM\\\\backend\\\\ib_analysis\\\\__main__.py\")",
-      "Bash(powershell -Command \"Remove-Item ''D:\\\\Github Code HUB\\\\AI知识助手\\\\NVIDIA_NETWORK_HEALTH_CHECK_PLATFORM\\\\backend\\\\ib_analysis\\\\cli.py'', ''D:\\\\Github Code HUB\\\\AI知识助手\\\\NVIDIA_NETWORK_HEALTH_CHECK_PLATFORM\\\\backend\\\\ib_analysis\\\\__main__.py'' -Force; Write-Host ''CLI files deleted''\")",
-      "Bash(powershell -Command:*)",
-      "Bash(git checkout:*)",
-      "Bash(findstr:*)"
+      "Bash(npm run build)"
     ]
   }
 }

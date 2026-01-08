@@ -28,6 +28,11 @@ class HcaService:
         self.fw_matrix = self._load_fw_matrix()
         self._topology: TopologyLookup | None = None
 
+    def clear_cache(self):
+        """Clear cached DataFrames to free memory."""
+        self._df = None
+        self._topology = None
+
     def run(self) -> List[Dict[str, object]]:
         df = self._load_dataframe()
         return df.to_dict(orient="records")
@@ -61,9 +66,16 @@ class HcaService:
             + "/"
             + df["FWInfo_Day"].astype(str).str[2:]
         )
-        df["FWInfo_Extended_Major"] = df["FWInfo_Extended_Major"].apply(lambda x: int(x, 16))
-        df["FWInfo_Extended_Minor"] = df["FWInfo_Extended_Minor"].apply(lambda x: int(x, 16))
-        df["FWInfo_Extended_SubMinor"] = df["FWInfo_Extended_SubMinor"].apply(lambda x: int(x, 16))
+        def safe_hex_to_int(x):
+            try:
+                return int(x, 16)
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid hex value: {x}")
+                return 0
+
+        df["FWInfo_Extended_Major"] = df["FWInfo_Extended_Major"].apply(safe_hex_to_int)
+        df["FWInfo_Extended_Minor"] = df["FWInfo_Extended_Minor"].apply(safe_hex_to_int)
+        df["FWInfo_Extended_SubMinor"] = df["FWInfo_Extended_SubMinor"].apply(safe_hex_to_int)
         df["Up Time"] = df["HWInfo_UpTime"].apply(self._safe_uptime)
         df["FW"] = (
             df["FWInfo_Extended_Major"].astype(str)
@@ -115,9 +127,22 @@ class HcaService:
 
     @staticmethod
     def _remove_redundant_zero(row) -> str:
-        guid = str(row.get("NodeGUID", ""))
+        """Remove redundant zeros from GUID. Can handle both dict/row and string."""
+        # Handle when called with a string value directly (from Series.apply)
+        if isinstance(row, str):
+            guid = row
+        # Handle when called with a dict/row object
+        elif isinstance(row, dict) or hasattr(row, "get"):
+            guid = str(row.get("NodeGUID", ""))
+        else:
+            guid = str(row)
+
         if guid.startswith("0x"):
-            return hex(int(guid, 16))
+            try:
+                return hex(int(guid, 16))
+            except (ValueError, OverflowError):
+                logger.warning(f"Invalid hex GUID format: {guid}")
+                return guid
         return guid
 
     @staticmethod

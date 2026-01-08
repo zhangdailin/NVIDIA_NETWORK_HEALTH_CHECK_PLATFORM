@@ -16,7 +16,7 @@ from .topology_lookup import TopologyLookup
 
 logger = logging.getLogger(__name__)
 
-BER_TABLE_CANDIDATES = ["PM_BER", "EFF_BER"]
+BER_TABLE_CANDIDATES = ["PM_BER", "EFF_BER", "PHY_DB16"]
 WARNINGS_TABLE = "WARNINGS_SYMBOL_BER_CHECK"
 WARNING_SEVERITY = {
     "BER_THRESHOLD_EXCEEDED": "critical",
@@ -44,6 +44,13 @@ class BerService:
         "EventName",
         "Summary",
         "SymbolBERSeverity",
+        "SymbolBERLog10Value",
+        "Log10 Symbol BER",
+        "Log10 Effective BER",
+        "Log10 Raw BER",
+        "Symbol BER",
+        "Effective BER",
+        "Raw BER",
     ]
 
     def __init__(self, dataset_root: Path):
@@ -52,6 +59,12 @@ class BerService:
         self._warnings_df: pd.DataFrame | None = None
         self._topology: TopologyLookup | None = None
 
+    def clear_cache(self):
+        """Clear cached DataFrames to free memory."""
+        self._df = None
+        self._warnings_df = None
+        self._topology = None
+
     def run(self) -> BerAnalysis:
         df = self._load_dataframe()
         warnings_df = self._load_warnings_dataframe()
@@ -59,10 +72,17 @@ class BerService:
         self._annotate_warning_rows(warnings_df)
         anomalies = self._build_anomalies(df, warnings_df)
         frames = []
-        if not df.empty:
-            frames.append(df)
+
+        # 🆕 只添加异常数据 (critical或warning)
+        if not df.empty and "SymbolBERSeverity" in df.columns:
+            anomaly_df = df[df["SymbolBERSeverity"].isin(["critical", "warning"])]
+            if not anomaly_df.empty:
+                frames.append(anomaly_df)
+                logger.info(f"BER: Filtered {len(df)} → {len(anomaly_df)} anomalies (removed {len(df)-len(anomaly_df)} normal ports)")
+
         if warnings_df is not None and not warnings_df.empty:
             frames.append(warnings_df)
+
         if frames:
             combined = pd.concat(frames, ignore_index=True)
             combined = self._topology_lookup().annotate_ports(combined, guid_col="NodeGUID", port_col="PortNumber")
@@ -137,16 +157,71 @@ class BerService:
 
     @staticmethod
     def _remove_redundant_zero(row) -> str:
-        guid = str(row.get("NodeGUID", ""))
+        """Remove redundant zeros from GUID. Can handle both dict/row and string."""
+        # Handle when called with a string value directly (from Series.apply)
+        if isinstance(row, str):
+            guid = row
+        # Handle when called with a dict/row object
+        elif isinstance(row, dict) or hasattr(row, "get"):
+            guid = str(row.get("NodeGUID", ""))
+        else:
+            guid = str(row)
+
         if guid.startswith("0x"):
-            return hex(int(guid, 16))
+            try:
+                return hex(int(guid, 16))
+            except (ValueError, OverflowError):
+                logger.warning(f"Invalid hex GUID format: {guid}")
+                return guid
         return guid
 
     def _process_mantissa_exponent_fields(self, df: pd.DataFrame) -> None:
-        if "field12" not in df.columns:
-            return
-        for col in ["Raw BER", "Effective BER", "Symbol BER"]:
-            df[f"Log10 {col}"] = df.apply(lambda row: self._log10(row, col), axis=1)
+        """Process BER fields, supporting both direct columns and mantissa/exponent pairs (field12-17)."""
+        if "field12" in df.columns:
+            # Table uses mantissa/exponent pairs (e.g. PHY_DB16 style)
+            mappings = [
+                ("field12", "field13", "Log10 Raw BER", "Raw BER"),
+                ("field14", "field15", "Log10 Effective BER", "Effective BER"),
+                ("field16", "field17", "Log10 Symbol BER", "Symbol BER"),
+            ]
+            for m_col, e_col, log_col, str_col in mappings:
+                if m_col in df.columns and e_col in df.columns:
+                    df[log_col] = df.apply(lambda row: self._me_to_log10(row[m_col], row[e_col]), axis=1)
+                    df[str_col] = df.apply(lambda row: self._me_to_sci(row[m_col], row[e_col]), axis=1)
+        else:
+            # Standard table with direct BER columns (e.g. PM_BER)
+            for col in ["Raw BER", "Effective BER", "Symbol BER"]:
+                if col in df.columns:
+                    df[f"Log10 {col}"] = df.apply(lambda row: self._log10(row, col), axis=1)
+                    # Ensure we have a string representation
+                    df[col] = df[col].apply(lambda v: f"{v:e}" if isinstance(v, (int, float)) and v > 0 else str(v))
+
+    @staticmethod
+    def _me_to_log10(m, e):
+        """Convert mantissa/exponent pair to log10 value."""
+        try:
+            m_val = int(float(m))
+            e_val = int(float(e))
+            if m_val == 0:
+                return -50.0
+            return math.log10(abs(m_val)) - e_val
+        except (ValueError, TypeError, OverflowError):
+            return -50.0
+
+    @staticmethod
+    def _me_to_sci(m, e) -> str:
+        """Convert mantissa/exponent to scientific notation string."""
+        try:
+            m_val = int(float(m))
+            e_val = int(float(e))
+            if m_val == 0:
+                return "0e+00"
+            log10_val = math.log10(abs(m_val)) - e_val
+            exponent = int(math.floor(log10_val))
+            mantissa = 10 ** (log10_val - exponent)
+            return f"{mantissa:.1f}e{exponent:+03d}"
+        except (ValueError, TypeError, OverflowError):
+            return "N/A"
 
     @staticmethod
     def _log10(row, col):

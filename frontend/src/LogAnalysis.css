@@ -1,0 +1,98 @@
+.log-analysis-container {
+  padding: 20px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  margin-top: 20px;
+  border: 1px solid #e9ecef;
+}
+
+.log-analysis-container.empty {
+  text-align: center;
+  color: #6c757d;
+  font-style: italic;
+}
+
+.log-analysis-container h3 {
+  margin-top: 0;
+  margin-bottom: 20px;
+  color: #343a40;
+  border-bottom: 2px solid #dee2e6;
+  padding-bottom: 10px;
+}
+
+.log-section {
+  margin-bottom: 20px;
+  padding: 15px;
+  border-radius: 6px;
+  background-color: white;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.log-section h4 {
+  margin-top: 0;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  font-size: 1.1em;
+}
+
+.log-section h4 .icon {
+  margin-right: 10px;
+}
+
+.log-section ul {
+  list-style-type: none;
+  padding-left: 0;
+  margin: 0;
+}
+
+.log-section li {
+  padding: 5px 0;
+  border-bottom: 1px solid #f1f3f5;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 0.9em;
+}
+
+.log-section li:last-child {
+  border-bottom: none;
+}
+
+/* Error Specifics */
+.error-section {
+  border-left: 5px solid #dc3545;
+}
+.error-section h4 {
+  color: #dc3545;
+}
+
+/* Warning Specifics */
+.warning-section {
+  border-left: 5px solid #ffc107;
+}
+.warning-section h4 {
+  color: #d39e00;
+}
+
+/* Routing Specifics */
+.routing-section {
+  border-left: 5px solid #17a2b8;
+}
+.routing-section h4 {
+  color: #17a2b8;
+}
+
+.routing-content {
+  background-color: #343a40;
+  color: #f8f9fa;
+  padding: 15px;
+  border-radius: 4px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 0.9em;
+  white-space: pre-wrap;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.log-line {
+  margin-bottom: 4px;
+}

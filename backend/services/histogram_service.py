@@ -78,7 +78,17 @@ class HistogramService:
             lambda row: self._ratio(row.get("RttP99Us"), row.get("RttMedianUs")),
             axis=1,
         )
-        df["RttUpperBucketRatio"] = df[self._bin_columns[-2:]].sum(axis=1) / df["HistogramTotal"].replace(0, pd.NA)
+
+        # Fix: Calculate upper bucket ratio with proper NA handling
+        def calculate_upper_ratio(row):
+            total = row.get("HistogramTotal", 0)
+            if not total or total <= 0:
+                return 0.0  # Return 0 instead of NA for empty histograms
+            upper_sum = sum(row.get(col, 0) or 0 for col in self._bin_columns[-2:])
+            return float(upper_sum) / float(total)
+
+        df["RttUpperBucketRatio"] = df.apply(calculate_upper_ratio, axis=1)
+
         df["RttOutlierFlag"] = df.apply(
             lambda row: self._is_outlier(row.get("RttP99OverMedian"), row.get("RttUpperBucketRatio")),
             axis=1,
@@ -111,8 +121,26 @@ class HistogramService:
 
     @staticmethod
     def _is_outlier(ratio: float, upper_ratio: float) -> bool:
-        ratio = ratio or 0.0
-        upper_ratio = upper_ratio or 0.0
+        """Check if RTT metrics indicate an outlier. Handles pandas NA values."""
+        import pandas as pd
+
+        # Handle pandas NA values
+        if pd.isna(ratio):
+            ratio = 0.0
+        if pd.isna(upper_ratio):
+            upper_ratio = 0.0
+
+        # Convert to float safely, handling None and other edge cases
+        try:
+            ratio = float(ratio) if ratio else 0.0
+        except (TypeError, ValueError):
+            ratio = 0.0
+
+        try:
+            upper_ratio = float(upper_ratio) if upper_ratio else 0.0
+        except (TypeError, ValueError):
+            upper_ratio = 0.0
+
         return ratio >= 5.0 or upper_ratio >= 0.2
 
     def _build_anomalies(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -120,13 +148,33 @@ class HistogramService:
         if not bool(mask.any()):
             return pd.DataFrame(columns=IBH_ANOMALY_TBL_KEY)
         payload = df.loc[mask, IBH_ANOMALY_TBL_KEY + ["RttP99OverMedian", "RttUpperBucketRatio"]].copy()
-        payload[str(AnomlyType.IBH_UNUSUAL_RTT_NUM)] = payload.apply(
-            lambda row: max(
-                0.1,
-                min(5.0, (row.get("RttP99OverMedian") or 0) / 5.0 + (row.get("RttUpperBucketRatio") or 0) * 2),
-            ),
-            axis=1,
-        )
+
+        def calculate_weight(row):
+            """Calculate anomaly weight with NA handling."""
+            import pandas as pd
+            p99_ratio = row.get("RttP99OverMedian")
+            upper_ratio = row.get("RttUpperBucketRatio")
+
+            # Handle NA values
+            if pd.isna(p99_ratio):
+                p99_ratio = 0.0
+            if pd.isna(upper_ratio):
+                upper_ratio = 0.0
+
+            # Convert to float safely
+            try:
+                p99_ratio = float(p99_ratio) if p99_ratio else 0.0
+            except (TypeError, ValueError):
+                p99_ratio = 0.0
+
+            try:
+                upper_ratio = float(upper_ratio) if upper_ratio else 0.0
+            except (TypeError, ValueError):
+                upper_ratio = 0.0
+
+            return max(0.1, min(5.0, p99_ratio / 5.0 + upper_ratio * 2))
+
+        payload[str(AnomlyType.IBH_UNUSUAL_RTT_NUM)] = payload.apply(calculate_weight, axis=1)
         return payload[IBH_ANOMALY_TBL_KEY + [str(AnomlyType.IBH_UNUSUAL_RTT_NUM)]]
 
     def _find_db_csv(self) -> Path:

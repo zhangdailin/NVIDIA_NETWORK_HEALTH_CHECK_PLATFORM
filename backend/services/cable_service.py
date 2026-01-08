@@ -88,10 +88,26 @@ class CableService:
         self._topology: TopologyLookup | None = None
         self._ports: pd.DataFrame | None = None
 
+    def clear_cache(self):
+        """Clear cached DataFrames to free memory."""
+        self._df = None
+        self._topology = None
+        self._ports = None
+
     def run(self) -> CableAnalysis:
         df = self._load_dataframe()
         anomalies = self._build_anomalies(df)
-        return CableAnalysis(data=df.to_dict(orient="records"), anomalies=anomalies)
+
+        # 🆕 只返回异常数据 (过滤掉normal)
+        # 添加Severity列基于温度和告警
+        df['Severity'] = df.apply(self._calculate_severity, axis=1)
+
+        # 过滤只保留异常
+        anomaly_df = df[df['Severity'] != 'normal']
+
+        logger.info(f"Cable: Filtered {len(df)} → {len(anomaly_df)} anomalies (removed {len(df)-len(anomaly_df)} normal cables)")
+
+        return CableAnalysis(data=anomaly_df.to_dict(orient="records"), anomalies=anomalies)
 
     def _load_dataframe(self) -> pd.DataFrame:
         if self._df is not None:
@@ -127,9 +143,22 @@ class CableService:
 
     @staticmethod
     def _remove_redundant_zero(row) -> str:
-        guid = str(row.get("NodeGUID", ""))
+        """Remove redundant zeros from GUID. Can handle both dict/row and string."""
+        # Handle when called with a string value directly (from Series.apply)
+        if isinstance(row, str):
+            guid = row
+        # Handle when called with a dict/row object
+        elif isinstance(row, dict) or hasattr(row, "get"):
+            guid = str(row.get("NodeGUID", ""))
+        else:
+            guid = str(row)
+
         if guid.startswith("0x"):
-            return hex(int(guid, 16))
+            try:
+                return hex(int(guid, 16))
+            except (ValueError, OverflowError):
+                logger.warning(f"Invalid hex GUID format: {guid}")
+                return guid
         return guid
 
     @staticmethod
@@ -154,6 +183,7 @@ class CableService:
         try:
             return int(float(temperature_str))
         except ValueError:
+            logger.warning(f"Failed to parse temperature value: {temperature_str}")
             return pd.NA
 
     def _build_anomalies(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -268,6 +298,9 @@ class CableService:
         subset["LocalSupportedLinkSpeedValue"], subset["LocalSupportedLinkSpeed"] = zip(
             *subset["LinkSpeedSup"].map(self._decode_speed)
         )
+        # Ensure PortNumber columns have the same dtype before merging
+        df["PortNumber"] = df["PortNumber"].astype(str)
+        subset["PortNumber"] = subset["PortNumber"].astype(str)
         merged = df.merge(
             subset,
             on=["NodeGUID", "PortNumber"],
@@ -337,3 +370,49 @@ class CableService:
             if code & bit:
                 return (priority, label)
         return (0, None)
+
+    def _calculate_severity(self, row) -> str:
+        """Calculate severity based on temperature and alarms.
+
+        Returns: 'critical', 'warning', or 'normal'
+        """
+        TEMP_WARNING_THRESHOLD = 70
+        TEMP_CRITICAL_THRESHOLD = 80
+
+        severity = "normal"
+
+        # Check temperature
+        temp = row.get('Temperature (c)')
+        if pd.notna(temp):
+            try:
+                temp_value = float(temp)
+                if temp_value >= TEMP_CRITICAL_THRESHOLD:
+                    severity = "critical"
+                elif temp_value >= TEMP_WARNING_THRESHOLD:
+                    severity = "warning"
+            except (ValueError, TypeError):
+                pass
+
+        # Check alarms
+        alarm_columns = [
+            'TX Bias Alarm and Warning',
+            'TX Power Alarm and Warning',
+            'RX Power Alarm and Warning',
+            'Latched Voltage Alarm and Warning'
+        ]
+
+        for col in alarm_columns:
+            if col in row.index and self._alarm_weight(row.get(col)) > 0:
+                severity = "critical"
+                break
+
+        # Check compliance status
+        compliance_status = row.get('CableComplianceStatus', 'OK')
+        speed_status = row.get('CableSpeedStatus', 'OK')
+
+        if (str(compliance_status).upper() != 'OK' and str(compliance_status) != '') or \
+           (str(speed_status).upper() != 'OK' and str(speed_status) != ''):
+            if severity == "normal":
+                severity = "warning"
+
+        return severity

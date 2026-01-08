@@ -1,7 +1,18 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import axios from 'axios'
-import { Upload, FileText, Activity, Server, Network, AlertTriangle, ShieldCheck, Cpu, CheckCircle, XCircle, AlertCircle, Fan as FanIcon, Clock3 } from 'lucide-react'
-import TopologyControls from './TopologyControls'
+import { Upload, FileText, Activity, Server, AlertTriangle, ShieldCheck, Cpu, CheckCircle, XCircle, AlertCircle, Fan as FanIcon, Clock3, BookOpen, ChevronDown, ChevronUp, Thermometer, Zap, Network, GitBranch, Link, Gauge, Layers, Settings, Database, Cpu as ChipIcon, BarChart2, Key, Box, Info, PlugZap, Shuffle, BrainCircuit, Shield, Radio, Users, BarChart3, HardDrive, Router, ThermometerSun, Timer } from 'lucide-react'
+import {
+  ERROR_KNOWLEDGE_BASE,
+  getErrorExplanation,
+  identifyIssueType,
+  identifyAllIssues,
+  getSeverityInfo,
+  ISSUE_CATEGORIES
+} from './ErrorExplanations'
+import FaultSummary from './FaultSummary'
+import CableAnalysis from './CableAnalysis'
+import BERAnalysis from './BERAnalysis'
+import CongestionAnalysis from './CongestionAnalysis'
 import './App.css'
 
 // Configuration - use relative URL for proxy support
@@ -25,9 +36,11 @@ const resolveMaxFileSize = () => {
 
 const MAX_FILE_SIZE = resolveMaxFileSize()
 const TABLE_PAGE_SIZE = 100
+const MAX_TABLE_ROWS = 500
+const FILE_SIZE_MB = 500
+const FILE_SIZE_BYTES = FILE_SIZE_MB * 1024 * 1024
 
 const ensureArray = (value) => (Array.isArray(value) ? value : [])
-const MAX_TABLE_ROWS = 500
 
 const toNumber = (value) => {
   const num = Number(value)
@@ -92,7 +105,7 @@ const buildCongestionInsights = (rows = []) => {
             ? 'warning'
             : 'info'
       return {
-        title: `${row['Node Name'] || row.NodeGUID || 'Unknown'} - Port ${row.PortNumber}`,
+        title: `${row['Node Name'] || row.NodeName || row.NodeGUID || 'Unknown'} - Port ${row.PortNumber || row['Port Number'] || 'N/A'}`,
         ratio,
         waitSeconds,
         congestionPct,
@@ -114,14 +127,178 @@ const buildCongestionInsights = (rows = []) => {
     }))
 }
 
+// 添加问题摘要组件 - 增强版，集成知识库
+function ProblemSummary({ title, problems, totalChecked, dataType }) {
+  const [expandedProblems, setExpandedProblems] = useState({})
+
+  const toggleProblem = (idx) => {
+    setExpandedProblems(prev => ({
+      ...prev,
+      [idx]: !prev[idx]
+    }))
+  }
+
+  if (!problems || problems.length === 0) {
+    return (
+      <div style={{
+        padding: '16px',
+        marginBottom: '20px',
+        background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+        borderRadius: '8px',
+        border: '1px solid #059669'
+      }}>
+        <h3 style={{ margin: '0 0 8px 0', color: '#fff', fontSize: '1.1rem' }}>
+          ✅ {title} - 未发现问题
+        </h3>
+        <p style={{ margin: 0, color: '#d1fae5', fontSize: '0.95rem' }}>
+          已检查 {totalChecked} 个端口，所有指标正常
+        </p>
+      </div>
+    )
+  }
+
+  const criticalCount = problems.filter(p => p.severity === 'critical').length
+  const warningCount = problems.filter(p => p.severity === 'warning').length
+
+  return (
+    <div style={{
+      padding: '16px',
+      marginBottom: '20px',
+      background: criticalCount > 0
+        ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)'
+        : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+      borderRadius: '8px',
+      border: `1px solid ${criticalCount > 0 ? '#dc2626' : '#d97706'}`
+    }}>
+      <h3 style={{ margin: '0 0 12px 0', color: '#fff', fontSize: '1.1rem' }}>
+        {criticalCount > 0 ? '🔴' : '⚠️'} {title} - 发现 {problems.length} 类问题
+      </h3>
+      <div style={{ display: 'flex', gap: '12px', marginBottom: '12px' }}>
+        {criticalCount > 0 && (
+          <span style={{
+            padding: '4px 12px',
+            background: 'rgba(0,0,0,0.3)',
+            borderRadius: '12px',
+            color: '#fff',
+            fontSize: '0.9rem'
+          }}>
+            🔴 {criticalCount} 个严重问题
+          </span>
+        )}
+        {warningCount > 0 && (
+          <span style={{
+            padding: '4px 12px',
+            background: 'rgba(0,0,0,0.3)',
+            borderRadius: '12px',
+            color: '#fff',
+            fontSize: '0.9rem'
+          }}>
+            ⚠️ {warningCount} 个警告
+          </span>
+        )}
+      </div>
+
+      {/* 问题列表 - 可展开查看知识库详情 */}
+      <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '6px', padding: '8px' }}>
+        {problems.map((problem, idx) => {
+          const isExpanded = expandedProblems[idx]
+          const kb = problem.kbType ? getErrorExplanation(problem.kbType) : null
+
+          return (
+            <div key={idx} style={{ marginBottom: idx < problems.length - 1 ? '8px' : 0 }}>
+              <div
+                onClick={() => kb && toggleProblem(idx)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '8px 12px',
+                  background: 'rgba(255,255,255,0.15)',
+                  borderRadius: '4px',
+                  cursor: kb ? 'pointer' : 'default'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ color: '#fff' }}>
+                    {problem.severity === 'critical' ? '🔴' : '⚠️'}
+                  </span>
+                  <span style={{ color: '#fff', fontSize: '0.95rem' }}>{problem.summary}</span>
+                </div>
+                {kb && (
+                  <span style={{ color: 'rgba(255,255,255,0.7)' }}>
+                    {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                  </span>
+                )}
+              </div>
+
+              {/* 展开的知识库详情 */}
+              {isExpanded && kb && (
+                <div style={{
+                  marginTop: '4px',
+                  padding: '12px',
+                  background: 'rgba(255,255,255,0.95)',
+                  borderRadius: '4px',
+                  color: '#1f2937'
+                }}>
+                  <h4 style={{ margin: '0 0 8px 0', fontSize: '1rem', color: '#374151' }}>
+                    <BookOpen size={14} style={{ marginRight: '6px' }} />
+                    {kb.title} ({kb.titleEn})
+                  </h4>
+
+                  <p style={{ margin: '0 0 12px 0', fontSize: '0.9rem', color: '#4b5563' }}>
+                    <strong>为什么重要：</strong>{kb.why_it_matters}
+                  </p>
+
+                  <div style={{ marginBottom: '12px' }}>
+                    <strong style={{ fontSize: '0.85rem', color: '#374151' }}>可能原因：</strong>
+                    <ul style={{ margin: '4px 0 0 0', paddingLeft: '20px', fontSize: '0.85rem', color: '#4b5563' }}>
+                      {kb.likely_causes?.slice(0, 3).map((cause, i) => (
+                        <li key={i}>{cause}</li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <div style={{ marginBottom: '8px' }}>
+                    <strong style={{ fontSize: '0.85rem', color: '#374151' }}>建议操作：</strong>
+                    <ol style={{ margin: '4px 0 0 0', paddingLeft: '20px', fontSize: '0.85rem', color: '#4b5563' }}>
+                      {kb.recommended_actions?.slice(0, 4).map((action, i) => (
+                        <li key={i}>{action}</li>
+                      ))}
+                    </ol>
+                  </div>
+
+                  {kb.mttr_estimate && (
+                    <p style={{ margin: '8px 0 0 0', fontSize: '0.8rem', color: '#6b7280' }}>
+                      <Clock3 size={12} style={{ marginRight: '4px' }} />
+                      预计修复时间: {kb.mttr_estimate}
+                    </p>
+                  )}
+
+                  {kb.reference && (
+                    <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: '#6b7280' }}>
+                      参考文档: {kb.reference}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 const buildBerInsights = (rows = []) => {
   const safeRows = ensureArray(rows)
   return safeRows
     .map(row => {
-      const log10 = toNumber(row.SymbolBERLog10Value)
-      const severity = row.SymbolBERSeverity || 'info'
+      // Support multiple BER Log10 field names
+      const log10 = toNumber(row.SymbolBERLog10Value || row.EffectiveBERLog10 || row.RawBERLog10)
+      // Support both severity field names
+      const severity = row.SymbolBERSeverity || row.Severity || 'info'
       return {
-        title: `${row['Node Name'] || row.NodeGUID || 'Node'} - Port ${row.PortNumber}`,
+        title: `${row['Node Name'] || row.NodeName || row.NodeGUID || 'Node'} - Port ${row.PortNumber || row['Port Number'] || 'N/A'}`,
         log10,
         severity,
       }
@@ -164,7 +341,7 @@ const buildCableInsights = (rows = []) => {
 
       return {
         vendor,
-        title: `${vendor} - Port ${row.PortNumber ?? 'N/A'}`,
+        title: `${vendor} - ${row['Node Name'] || row.NodeName || 'Port'} ${row.PortNumber || row['Port Number'] || 'N/A'}`,
         temp,
         linkDown,
         hasErrors,
@@ -205,7 +382,7 @@ const buildFanInsights = (rows = []) => {
   const safeRows = ensureArray(rows)
   return safeRows
     .map(row => {
-      const node = row['Node Name'] || row.NodeGUID || 'Chassis'
+      const node = row['Node Name'] || row.NodeName || row.NodeGUID || 'Chassis'
       const sensor = row.SensorIndex ?? row.PortNumber ?? 'N/A'
       const fanSpeed = toNumber(row.FanSpeed)
       const minSpeed = toNumber(row.MinSpeed)
@@ -256,7 +433,7 @@ const buildLatencyInsights = (rows = []) => {
       const ratio = toNumber(row.RttP99OverMedian)
       const upper = toNumber(row.RttUpperBucketRatio) * 100
       return {
-        title: `${row['Node Name'] || row.NodeGUID || 'Node'} - Port ${row.PortNumber}`,
+        title: `${row['Node Name'] || row.NodeName || row.NodeGUID || 'Node'} - Port ${row.PortNumber || row['Port Number'] || 'N/A'}`,
         median: toNumber(row.RttMedianUs),
         p99: toNumber(row.RttP99Us),
         ratio,
@@ -380,6 +557,9 @@ function HealthScore({ health }) {
 
 // Issues List Component
 function IssuesList({ issues }) {
+  const [expandedCategories, setExpandedCategories] = useState({})
+  const [expandedIssues, setExpandedIssues] = useState({})
+
   if (!issues || issues.length === 0) {
     return <p className="no-issues">No issues detected</p>
   }
@@ -393,6 +573,20 @@ function IssuesList({ issues }) {
     }
   }
 
+  const toggleCategory = (category) => {
+    setExpandedCategories(prev => ({
+      ...prev,
+      [category]: !prev[category]
+    }))
+  }
+
+  const toggleIssue = (issueKey) => {
+    setExpandedIssues(prev => ({
+      ...prev,
+      [issueKey]: !prev[issueKey]
+    }))
+  }
+
   // Group issues by category
   const groupedIssues = issues.reduce((acc, issue) => {
     if (!acc[issue.category]) acc[issue.category] = []
@@ -402,196 +596,114 @@ function IssuesList({ issues }) {
 
   return (
     <div className="issues-list">
-      {Object.entries(groupedIssues).map(([category, categoryIssues]) => (
-        <div key={category} className="issue-category">
-          <h4 className="issue-category-title">{category.toUpperCase()}</h4>
-          {categoryIssues.slice(0, 10).map((issue, idx) => (
-            <div key={idx} className="issue-item" style={{ borderLeftColor: getSeverityColor(issue.severity) }}>
-              <div className="issue-header">
-                <span className="issue-severity" style={{ color: getSeverityColor(issue.severity) }}>
-                  {issue.severity.toUpperCase()}
-                </span>
-                <span className="issue-description">{issue.description}</span>
-              </div>
-              <div className="issue-details">
-                <span>Node: {issue.node_guid ? String(issue.node_guid).slice(0, 16) + '...' : 'N/A'}</span>
-                <span>Port: {issue.port_number}</span>
-              </div>
-              {issue.details?.kb && (
-                <div className="issue-knowledge">
-                  <p className="issue-knowledge-title">{issue.details.kb.title}</p>
-                  <p className="issue-knowledge-text">{issue.details.kb.why_it_matters}</p>
-                  {issue.details.kb.likely_causes?.length > 0 && (
-                    <div className="issue-knowledge-section">
-                      <strong>Possible causes</strong>
-                      <ul>
-                        {issue.details.kb.likely_causes.slice(0, 3).map((cause, idx2) => (
-                          <li key={idx2}>{cause}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  {issue.details.kb.recommended_actions?.length > 0 && (
-                    <div className="issue-knowledge-section">
-                      <strong>Recommended actions</strong>
-                      <ul>
-                        {issue.details.kb.recommended_actions.slice(0, 3).map((action, idx3) => (
-                          <li key={idx3}>{action}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  {issue.details.kb.reference && (
-                    <p className="issue-knowledge-reference">Reference: {issue.details.kb.reference}</p>
-                  )}
-                </div>
+      {Object.entries(groupedIssues).map(([category, categoryIssues]) => {
+        const isExpanded = expandedCategories[category]
+        const displayIssues = isExpanded ? categoryIssues : categoryIssues.slice(0, 5)
+
+        return (
+          <div key={category} className="issue-category">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h4 className="issue-category-title">
+                {category.toUpperCase()} ({categoryIssues.length})
+              </h4>
+              {categoryIssues.length > 5 && (
+                <button
+                  onClick={() => toggleCategory(category)}
+                  style={{
+                    padding: '4px 12px',
+                    fontSize: '0.85rem',
+                    background: '#1e293b',
+                    border: '1px solid #334155',
+                    borderRadius: '4px',
+                    color: '#94a3b8',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {isExpanded ? 'Show Less' : `Show All (${categoryIssues.length})`}
+                </button>
               )}
             </div>
-          ))}
-          {categoryIssues.length > 10 && (
-            <p className="more-issues">... and {categoryIssues.length - 10} more</p>
-          )}
-        </div>
-      ))}
+
+            {displayIssues.map((issue, idx) => {
+              const issueKey = `${category}-${idx}`
+              const isIssueExpanded = expandedIssues[issueKey]
+
+              return (
+                <div key={idx} className="issue-item" style={{ borderLeftColor: getSeverityColor(issue.severity) }}>
+                  <div className="issue-header">
+                    <span className="issue-severity" style={{ color: getSeverityColor(issue.severity) }}>
+                      {issue.severity.toUpperCase()}
+                    </span>
+                    <span className="issue-description">{issue.description}</span>
+                  </div>
+                  <div className="issue-details">
+                    <span>Node: {issue.node_guid ? String(issue.node_guid).slice(0, 16) + '...' : 'N/A'}</span>
+                    <span>Port: {issue.port_number || 'N/A'}</span>
+                    {issue.weight && <span>Weight: {Number(issue.weight).toFixed(2)}</span>}
+                  </div>
+
+                  {issue.details?.kb && (
+                    <>
+                      <button
+                        onClick={() => toggleIssue(issueKey)}
+                        style={{
+                          marginTop: '8px',
+                          padding: '4px 8px',
+                          fontSize: '0.8rem',
+                          background: 'transparent',
+                          border: '1px solid #334155',
+                          borderRadius: '4px',
+                          color: '#3b82f6',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {isIssueExpanded ? '▼ Hide Details' : '▶ Show Details'}
+                      </button>
+
+                      {isIssueExpanded && (
+                        <div className="issue-knowledge" style={{ marginTop: '12px' }}>
+                          <p className="issue-knowledge-title">{issue.details.kb.title}</p>
+                          <p className="issue-knowledge-text">{issue.details.kb.why_it_matters}</p>
+                          {issue.details.kb.likely_causes?.length > 0 && (
+                            <div className="issue-knowledge-section">
+                              <strong>Possible causes:</strong>
+                              <ul>
+                                {issue.details.kb.likely_causes.map((cause, idx2) => (
+                                  <li key={idx2}>{cause}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {issue.details.kb.recommended_actions?.length > 0 && (
+                            <div className="issue-knowledge-section">
+                              <strong>Recommended actions:</strong>
+                              <ul>
+                                {issue.details.kb.recommended_actions.map((action, idx3) => (
+                                  <li key={idx3}>{action}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {issue.details.kb.reference && (
+                            <p className="issue-knowledge-reference">
+                              <strong>Reference:</strong> {issue.details.kb.reference}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )
+      })}
     </div>
   )
 }
 
-export default function App() {
-  const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState(null)
-  const [error, setError] = useState(null)
-  const [activeTab, setActiveTab] = useState('overview')
-  const [uploadProgress, setUploadProgress] = useState(0)
-  const [topoFilters, setTopoFilters] = useState(null)
-  const topoIframeRef = useRef(null)
-
-  // Handle topology filter changes - send message to iframe
-  const handleTopoFilterChange = useCallback((filters) => {
-    setTopoFilters(filters)
-    // Send filter message to iframe if it exists
-    if (topoIframeRef.current?.contentWindow) {
-      topoIframeRef.current.contentWindow.postMessage({
-        type: 'FILTER_TOPOLOGY',
-        filters
-      }, '*')
-    }
-  }, [])
-
-  const validateFile = (file, allowedExtensions, maxSize = MAX_FILE_SIZE) => {
-    // Check file size
-    if (file.size > maxSize) {
-      throw new Error(`File too large. Maximum size is ${maxSize / (1024 * 1024)}MB`)
-    }
-
-    // Check file extension
-    const fileName = file.name.toLowerCase()
-    const isValid = allowedExtensions.some(ext => fileName.endsWith(ext))
-
-    if (!isValid) {
-      throw new Error(`Invalid file type. Allowed: ${allowedExtensions.join(', ')}`)
-    }
-
-    return true
-  }
-
-  const formatError = (err) => {
-    if (err.response?.status === 413) {
-      return 'File too large. Maximum size is 500MB'
-    }
-    if (err.response?.status === 400) {
-      return err.response?.data?.detail || 'Invalid file format'
-    }
-    if (err.response?.status === 500) {
-      return `Server error: ${err.response?.data?.detail || 'Analysis failed'}`
-    }
-    if (err.code === 'ECONNABORTED') {
-      return 'Request timeout. File may be too large or server is busy'
-    }
-    if (err.code === 'ERR_NETWORK') {
-      return 'Network error. Please check if the backend server is running'
-    }
-    return err.response?.data?.detail || err.message || 'Unknown error occurred'
-  }
-
-  const handleIbdiagnetUpload = async (event) => {
-    const file = event.target.files[0]
-    if (!file) return
-
-    setLoading(true)
-    setError(null)
-    setResult(null)
-    setActiveTab('overview')
-    setUploadProgress(0)
-
-    try {
-      // Validate file before upload
-      validateFile(file, ['.zip', '.tar.gz', '.tgz'])
-
-      const formData = new FormData()
-      formData.append('file', file)
-
-      const response = await axios.post(buildApiUrl('/upload/ibdiagnet'), formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        },
-        timeout: 300000, // 5 minutes timeout
-        onUploadProgress: (progressEvent) => {
-          const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total)
-          setUploadProgress(percentCompleted)
-        }
-      })
-      setResult({ type: 'ibdiagnet', data: response.data })
-      setUploadProgress(100)
-    } catch (err) {
-      console.error('Upload error:', err)
-      setError(formatError(err))
-    } finally {
-      setLoading(false)
-      // Reset file input
-      event.target.value = ''
-    }
-  }
-
-  const handleCsvUpload = async (event) => {
-    const file = event.target.files[0]
-    if (!file) return
-
-    setLoading(true)
-    setError(null)
-    setResult(null)
-    setActiveTab('data')
-    setUploadProgress(0)
-
-    try {
-      // Validate file before upload
-      validateFile(file, ['.csv'])
-
-      const formData = new FormData()
-      formData.append('file', file)
-
-      const response = await axios.post(buildApiUrl('/upload/ufm-csv'), formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        },
-        timeout: 120000, // 2 minutes timeout
-        onUploadProgress: (progressEvent) => {
-          const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total)
-          setUploadProgress(percentCompleted)
-        }
-      })
-      setResult({ type: 'csv', data: response.data })
-      setUploadProgress(100)
-    } catch (err) {
-      console.error('Upload error:', err)
-      setError(formatError(err))
-    } finally {
-      setLoading(false)
-      // Reset file input
-      event.target.value = ''
-    }
-  }
-
+// PaginatedTable component - moved outside to prevent re-creation on every render
 function PaginatedTable({ rows, totalRows, serverPreviewLimit, emptyDebug }) {
   const data = ensureArray(rows)
   const [page, setPage] = useState(1)
@@ -696,6 +808,141 @@ function PaginatedTable({ rows, totalRows, serverPreviewLimit, emptyDebug }) {
   )
 }
 
+function App() {
+  const [loading, setLoading] = useState(false)
+  const [result, setResult] = useState(null)
+  const [error, setError] = useState(null)
+  const [activeTab, setActiveTab] = useState('overview')
+  const [uploadProgress, setUploadProgress] = useState(0)
+
+  const validateFile = (file, allowedExtensions, maxSize = MAX_FILE_SIZE) => {
+    // Check file size
+    if (file.size > maxSize) {
+      throw new Error(`File too large. Maximum size is ${maxSize / (1024 * 1024)}MB`)
+    }
+
+    // Check file extension
+    const fileName = file.name.toLowerCase()
+    const isValid = allowedExtensions.some(ext => fileName.endsWith(ext))
+
+    if (!isValid) {
+      throw new Error(`Invalid file type. Allowed: ${allowedExtensions.join(', ')}`)
+    }
+
+    return true
+  }
+
+  const formatError = (err) => {
+    // Handle axios errors with response
+    if (err.response) {
+      if (err.response.status === 413) {
+        return `File too large. Maximum size is ${FILE_SIZE_MB}MB`
+      }
+      if (err.response.status === 400) {
+        return err.response.data?.detail || 'Invalid file format'
+      }
+      if (err.response.status === 500) {
+        return `Server error: ${err.response.data?.detail || 'Analysis failed'}`
+      }
+      // Generic response error
+      return err.response.data?.detail || `Server error (${err.response.status})`
+    }
+
+    // Handle axios errors with request but no response
+    if (err.request) {
+      return 'No response from server. Please check if the backend is running'
+    }
+
+    // Handle specific error codes
+    if (err.code === 'ECONNABORTED') {
+      return 'Request timeout. File may be too large or server is busy'
+    }
+    if (err.code === 'ERR_NETWORK') {
+      return 'Network error. Please check if the backend server is running'
+    }
+
+    // Fallback to error message
+    return err.message || 'Unknown error occurred'
+  }
+
+  const handleIbdiagnetUpload = async (event) => {
+    const file = event.target.files[0]
+    if (!file) return
+
+    setLoading(true)
+    setError(null)
+    setResult(null)
+    setActiveTab('overview')
+    setUploadProgress(0)
+
+    try {
+      // Validate file before upload
+      validateFile(file, ['.zip', '.tar.gz', '.tgz'])
+
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const response = await axios.post(buildApiUrl('/upload/ibdiagnet'), formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        },
+        timeout: 900000, // 15 minutes timeout (increased for large files)
+        onUploadProgress: (progressEvent) => {
+          const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total)
+          setUploadProgress(percentCompleted)
+        }
+      })
+      setResult({ type: 'ibdiagnet', data: response.data })
+      setUploadProgress(100)
+    } catch (err) {
+      console.error('Upload error:', err)
+      setError(formatError(err))
+    } finally {
+      setLoading(false)
+      // Reset file input
+      event.target.value = ''
+    }
+  }
+
+  const handleCsvUpload = async (event) => {
+    const file = event.target.files[0]
+    if (!file) return
+
+    setLoading(true)
+    setError(null)
+    setResult(null)
+    setActiveTab('data')
+    setUploadProgress(0)
+
+    try {
+      // Validate file before upload
+      validateFile(file, ['.csv'])
+
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const response = await axios.post(buildApiUrl('/upload/ufm-csv'), formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        },
+        timeout: 600000, // 10 minutes timeout (increased for large files)
+        onUploadProgress: (progressEvent) => {
+          const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total)
+          setUploadProgress(percentCompleted)
+        }
+      })
+      setResult({ type: 'csv', data: response.data })
+      setUploadProgress(100)
+    } catch (err) {
+      console.error('Upload error:', err)
+      setError(formatError(err))
+    } finally {
+      setLoading(false)
+      // Reset file input
+      event.target.value = ''
+    }
+  }
+
   const renderIbdiagnetContent = () => {
     const {
       data,
@@ -705,7 +952,72 @@ function PaginatedTable({ rows, totalRows, serverPreviewLimit, emptyDebug }) {
       hca_data,
       fan_data,
       histogram_data,
-      topo_url,
+      temperature_data,
+      power_data,
+      switch_data,
+      routing_data,
+      port_health_data,
+      links_data,
+      qos_data,
+      sm_info_data,
+      port_hierarchy_data,
+      mlnx_counters_data,
+      pm_delta_data,
+      vports_data,
+      pkey_data,
+      system_info_data,
+      extended_port_info_data,
+      ar_info_data,
+      sharp_data,
+      fec_mode_data,
+      phy_diagnostics_data,
+      neighbors_data,
+      buffer_histogram_data,
+      extended_node_info_data,
+      extended_switch_info_data,
+      power_sensors_data,
+      routing_config_data,
+      temp_alerts_data,
+      credit_watchdog_data,
+      pci_performance_data,
+      ber_advanced_data,
+      cable_enhanced_data,
+      per_lane_performance_data,
+      n2n_security_data,
+      temperature_summary,
+      power_summary,
+      switch_summary,
+      routing_summary,
+      port_health_summary,
+      links_summary,
+      qos_summary,
+      sm_info_summary,
+      port_hierarchy_summary,
+      mlnx_counters_summary,
+      pm_delta_summary,
+      vports_summary,
+      pkey_summary,
+      system_info_summary,
+      extended_port_info_summary,
+      ar_info_summary,
+      sharp_summary,
+      fec_mode_summary,
+      phy_diagnostics_summary,
+      neighbors_summary,
+      buffer_histogram_summary,
+      extended_node_info_summary,
+      extended_switch_info_summary,
+      power_sensors_summary,
+      routing_config_summary,
+      temp_alerts_summary,
+      credit_watchdog_summary,
+      pci_performance_summary,
+      ber_advanced_summary,
+      cable_enhanced_summary,
+      per_lane_performance_summary,
+      n2n_security_summary,
+      warnings_by_category,
+      warnings_summary,
       health,
       data_total_rows,
       cable_total_rows,
@@ -714,18 +1026,90 @@ function PaginatedTable({ rows, totalRows, serverPreviewLimit, emptyDebug }) {
       hca_total_rows,
       fan_total_rows,
       histogram_total_rows,
+      temperature_total_rows,
+      power_total_rows,
+      switch_total_rows,
+      routing_total_rows,
+      port_health_total_rows,
+      links_total_rows,
+      qos_total_rows,
+      sm_info_total_rows,
+      port_hierarchy_total_rows,
+      mlnx_counters_total_rows,
+      pm_delta_total_rows,
+      vports_total_rows,
+      pkey_total_rows,
+      system_info_total_rows,
+      extended_port_info_total_rows,
+      ar_info_total_rows,
+      sharp_total_rows,
+      fec_mode_total_rows,
+      phy_diagnostics_total_rows,
+      neighbors_total_rows,
+      buffer_histogram_total_rows,
+      extended_node_info_total_rows,
+      extended_switch_info_total_rows,
+      power_sensors_total_rows,
+      routing_config_total_rows,
+      temp_alerts_total_rows,
+      credit_watchdog_total_rows,
+      pci_performance_total_rows,
+      ber_advanced_total_rows,
+      cable_enhanced_total_rows,
+      per_lane_performance_total_rows,
+      n2n_security_total_rows,
       preview_row_limit,
     } = result.data
+
+    // Extract warnings by category for merging into tabs
+    const firmwareWarnings = warnings_by_category?.firmware || []
+    const pciWarnings = warnings_by_category?.pci || []
+    const counterWarnings = warnings_by_category?.counters || []
+    const topologyWarnings = warnings_by_category?.topology || []
+    const cableWarnings = warnings_by_category?.cable || []
+    const berWarnings = warnings_by_category?.ber || []
 
     switch (activeTab) {
       case 'overview': {
         const actionPlan = buildActionPlan(health?.issues || [])
+
+        // Topology warnings for Overview
+        const topoProblems = []
+        if (topologyWarnings.length > 0) {
+          topoProblems.push({
+            severity: 'info',
+            summary: `${topologyWarnings.length} 个节点描述重复，建议配置唯一名称便于管理`,
+            kbType: 'NODE_DUPLICATED_DESCRIPTION'
+          })
+        }
+
         return (
           <div className="scroll-area">
+            {/* 故障汇总 - 在最前面显示 */}
+            <div className="card">
+              <h2>🚨 故障汇总 (所有有问题的内容)</h2>
+              <FaultSummary analysisData={result.data} />
+            </div>
+
             <div className="card">
               <h2>Network Health Score</h2>
               <HealthScore health={health} />
             </div>
+
+            {/* 🆕 BER健康分析 (替代topology) */}
+            <div className="card">
+              <h2>📊 误码率 (BER) 健康分析</h2>
+              <p style={{ color: '#666', marginBottom: '15px' }}>
+                Symbol BER、Effective BER、Raw BER 完整分析
+              </p>
+              <BERAnalysis
+                berData={ber_data}
+                berAdvancedData={ber_advanced_data}
+                perLaneData={per_lane_performance_data}
+                berAdvancedSummary={ber_advanced_summary}
+              />
+            </div>
+
             <div className="card">
               <h2>Detected Issues</h2>
               <IssuesList issues={health?.issues} />
@@ -766,132 +1150,119 @@ function PaginatedTable({ rows, totalRows, serverPreviewLimit, emptyDebug }) {
           </div>
         )
       }
-      case 'topology':
-        return (
-          <div className="iframe-container" style={{position: 'relative'}}>
-            <TopologyControls onFilterChange={handleTopoFilterChange} />
-            {topo_url ? (
-              <iframe
-                ref={topoIframeRef}
-                src={buildAssetUrl(topo_url)}
-                title="Network Topology"
-                width="100%"
-                height="100%"
-                style={{border: 'none'}}
-                onLoad={() => {
-                  // Apply filters after iframe loads
-                  if (topoFilters && topoIframeRef.current?.contentWindow) {
-                    topoIframeRef.current.contentWindow.postMessage({
-                      type: 'FILTER_TOPOLOGY',
-                      filters: topoFilters
-                    }, '*')
-                  }
-                }}
-              />
-            ) : (
-              <div style={{padding: '2rem'}}>
-                <p>Topology map not available.</p>
-              </div>
-            )}
-          </div>
-        )
       case 'cable': {
-        const cableInsights = buildCableInsights(cable_data || [])
         return (
           <div className="scroll-area">
             <div className="card">
-              <h2>Cable Health Check</h2>
-              <p>Optics temperature, vendor, and error counter summary.</p>
-              {cableInsights.length > 0 && (
-                <div className="insight-grid">
-                  {cableInsights.map((insight, idx) => (
-                    <InsightCard
-                      key={`cable-${idx}`}
-                      title={insight.title}
-                      subtitle={insight.subtitle}
-                      description={insight.description}
-                      severity={insight.severity}
-                      reference={insight.reference}
-                      actions={insight.actions}
-                    />
-                  ))}
-                </div>
-              )}
-              <PaginatedTable
-                rows={cable_data}
-                totalRows={cable_total_rows}
-                serverPreviewLimit={preview_row_limit}
-              />
+              <h2>📡 线缆与光模块健康分析</h2>
+              <p>光模块温度、光功率、线缆规格完整分析</p>
+              <CableAnalysis cableData={cable_data} />
             </div>
           </div>
         )
       }
       case 'xmit': {
-        const congestionInsights = buildCongestionInsights(xmit_data || [])
         return (
           <div className="scroll-area">
             <div className="card">
-              <h2>Congestion & Errors (Xmit)</h2>
-              <p>Port transmission wait times and congestion counters.</p>
-              {congestionInsights.length > 0 && (
-                <div className="insight-grid">
-                  {congestionInsights.map((insight, idx) => (
-                    <InsightCard
-                      key={`xmit-${idx}`}
-                      title={insight.title}
-                      subtitle={insight.subtitle}
-                      description={insight.description}
-                      severity={insight.severity}
-                      reference={insight.reference}
-                    />
-                  ))}
-                </div>
-              )}
-              <PaginatedTable
-                rows={xmit_data}
-                totalRows={xmit_total_rows}
-                serverPreviewLimit={preview_row_limit}
-              />
+              <h2>🚦 拥塞与错误分析 (Xmit)</h2>
+              <p>端口等待时间、FECN/BECN拥塞通知、链路稳定性完整分析</p>
+              <CongestionAnalysis xmitData={xmit_data} />
             </div>
           </div>
         )
       }
       case 'ber': {
-        const berInsights = buildBerInsights(ber_data || [])
         return (
           <div className="scroll-area">
             <div className="card">
-              <h2>Bit Error Rate (BER) Analysis</h2>
-              <p>Signal integrity issues and high bit error rates.</p>
-              {berInsights.length > 0 && (
-                <div className="insight-grid">
-                  {berInsights.map((insight, idx) => (
-                    <InsightCard
-                      key={`ber-${idx}`}
-                      title={insight.title}
-                      subtitle={insight.subtitle}
-                      description={insight.description}
-                      severity={insight.severity}
-                      reference={insight.reference}
-                    />
-                  ))}
-                </div>
-              )}
-              <PaginatedTable
-                rows={ber_data}
-                totalRows={ber_total_rows}
-                serverPreviewLimit={preview_row_limit}
+              <h2>📊 误码率 (BER) 健康分析</h2>
+              <p>Symbol BER、Effective BER、FEC纠正活动完整分析</p>
+              <BERAnalysis
+                berData={ber_data}
+                berAdvancedData={ber_advanced_data}
+                perLaneData={per_lane_performance_data}
+                berAdvancedSummary={ber_advanced_summary}
               />
             </div>
           </div>
         )
       }
-      case 'hca':
+      case 'hca': {
+        // 分析HCA/Firmware问题
+        const hcaProblems = []
+        let outdatedFwCount = 0
+        let psidIssueCount = 0
+        const fwVersions = new Set()
+
+        ensureArray(hca_data).forEach(row => {
+          const fwCompliant = row.FW_Compliant
+          const psidCompliant = row.PSID_Compliant
+          const fwVersion = row.FW_Version || row.FirmwareVersion
+
+          if (fwVersion) fwVersions.add(fwVersion)
+
+          if (fwCompliant === false || fwCompliant === 'false' || fwCompliant === 'False') {
+            outdatedFwCount++
+          }
+          if (psidCompliant === false || psidCompliant === 'false' || psidCompliant === 'False') {
+            psidIssueCount++
+          }
+        })
+
+        if (outdatedFwCount > 0) {
+          hcaProblems.push({
+            severity: 'warning',
+            summary: `${outdatedFwCount} 个设备固件版本过旧，建议升级`,
+            kbType: 'HCA_FIRMWARE_OUTDATED'
+          })
+        }
+        if (psidIssueCount > 0) {
+          hcaProblems.push({
+            severity: 'warning',
+            summary: `${psidIssueCount} 个设备PSID不在支持列表中`,
+            kbType: 'HCA_PSID_UNSUPPORTED'
+          })
+        }
+        if (fwVersions.size > 3) {
+          hcaProblems.push({
+            severity: 'info',
+            summary: `检测到 ${fwVersions.size} 个不同的固件版本，建议统一`,
+            kbType: 'HCA_FIRMWARE_MIXED_VERSIONS'
+          })
+        }
+
+        // Add firmware warnings from ibdiagnet WARNINGS tables
+        if (firmwareWarnings.length > 0) {
+          hcaProblems.push({
+            severity: 'warning',
+            summary: `${firmwareWarnings.length} 个节点固件版本不一致 (来自ibdiagnet警告)`,
+            kbType: 'HCA_FIRMWARE_MIXED_VERSIONS'
+          })
+        }
+
+        // Add PCI degradation warnings
+        if (pciWarnings.length > 0) {
+          hcaProblems.push({
+            severity: 'critical',
+            summary: `${pciWarnings.length} 个端口PCI速度降级 (如Gen4→Gen3)，影响性能`,
+            kbType: 'PCI_DEGRADATION'
+          })
+        }
+
         return (
           <div className="scroll-area">
             <div className="card">
               <h2>Device & Firmware Analysis</h2>
               <p>Firmware version inconsistencies and device anomalies.</p>
+
+              <ProblemSummary
+                title="固件分析"
+                problems={hcaProblems}
+                totalChecked={ensureArray(hca_data).length}
+                dataType="hca"
+              />
+
               <PaginatedTable
                 rows={hca_data}
                 totalRows={hca_total_rows}
@@ -900,13 +1271,62 @@ function PaginatedTable({ rows, totalRows, serverPreviewLimit, emptyDebug }) {
             </div>
           </div>
         )
+      }
       case 'latency': {
         const latencyInsights = buildLatencyInsights(histogram_data || [])
+
+        // 分析延迟问题
+        const latencyProblems = []
+        let highP99Count = 0
+        let upperBucketCount = 0
+        let jitterCount = 0
+
+        ensureArray(histogram_data).forEach(row => {
+          const p99OverMedian = toNumber(row.RttP99OverMedian)
+          const upperRatio = toNumber(row.RttUpperBucketRatio)
+          const minRtt = toNumber(row.RttMinUs)
+          const maxRtt = toNumber(row.RttMaxUs)
+
+          if (p99OverMedian >= 3) highP99Count++
+          if (upperRatio >= 0.1) upperBucketCount++
+          if (minRtt > 0 && maxRtt > minRtt * 10) jitterCount++
+        })
+
+        if (highP99Count > 0) {
+          latencyProblems.push({
+            severity: highP99Count > 5 ? 'critical' : 'warning',
+            summary: `${highP99Count} 个端口P99延迟异常偏高 (>3倍中位数)`,
+            kbType: 'HISTOGRAM_HIGH_LATENCY'
+          })
+        }
+        if (upperBucketCount > 0) {
+          latencyProblems.push({
+            severity: 'warning',
+            summary: `${upperBucketCount} 个端口高延迟桶占比过高 (>10%)`,
+            kbType: 'HISTOGRAM_UPPER_BUCKET'
+          })
+        }
+        if (jitterCount > 0) {
+          latencyProblems.push({
+            severity: 'warning',
+            summary: `${jitterCount} 个端口延迟抖动过大`,
+            kbType: 'HISTOGRAM_JITTER'
+          })
+        }
+
         return (
           <div className="scroll-area">
             <div className="card">
               <h2>Latency Histogram</h2>
               <p>RTT distribution and heavy-tail detection from ibdiagnet histograms.</p>
+
+              <ProblemSummary
+                title="延迟分析"
+                problems={latencyProblems}
+                totalChecked={ensureArray(histogram_data).length}
+                dataType="histogram"
+              />
+
               {latencyInsights.length > 0 && (
                 <div className="insight-grid">
                   {latencyInsights.map((insight, idx) => (
@@ -933,11 +1353,52 @@ function PaginatedTable({ rows, totalRows, serverPreviewLimit, emptyDebug }) {
       }
       case 'fan': {
         const fanInsights = buildFanInsights(fan_data || [])
+
+        // 分析风扇问题
+        const fanProblems = []
+        let lowSpeedCount = 0
+        let highSpeedCount = 0
+        let alertCount = 0
+
+        ensureArray(fan_data).forEach(row => {
+          const fanSpeed = toNumber(row.FanSpeed)
+          const minSpeed = toNumber(row.MinSpeed)
+          const maxSpeed = toNumber(row.MaxSpeed)
+          const status = String(row.FanStatus || '').toLowerCase()
+
+          if (status === 'alert') alertCount++
+          if (minSpeed > 0 && fanSpeed < minSpeed) lowSpeedCount++
+          if (maxSpeed > 0 && fanSpeed > maxSpeed * 0.9) highSpeedCount++
+        })
+
+        if (lowSpeedCount > 0 || alertCount > 0) {
+          fanProblems.push({
+            severity: 'critical',
+            summary: `${Math.max(lowSpeedCount, alertCount)} 个风扇转速过低或告警，可能导致设备过热`,
+            kbType: 'FAN_SPEED_LOW'
+          })
+        }
+        if (highSpeedCount > 0) {
+          fanProblems.push({
+            severity: 'warning',
+            summary: `${highSpeedCount} 个风扇长时间高速运转，散热系统压力大`,
+            kbType: 'FAN_SPEED_HIGH'
+          })
+        }
+
         return (
           <div className="scroll-area">
             <div className="card">
               <h2>Fan &amp; Chassis Health</h2>
               <p>Fan speed deviations based on FANS_SPEED/THRESHOLD tables.</p>
+
+              <ProblemSummary
+                title="风扇健康检查"
+                problems={fanProblems}
+                totalChecked={ensureArray(fan_data).length}
+                dataType="fan"
+              />
+
               {fanInsights.length > 0 && (
                 <div className="insight-grid">
                   {fanInsights.map((insight, idx) => (
@@ -956,6 +1417,1293 @@ function PaginatedTable({ rows, totalRows, serverPreviewLimit, emptyDebug }) {
               <PaginatedTable
                 rows={fan_data}
                 totalRows={fan_total_rows}
+                serverPreviewLimit={preview_row_limit}
+              />
+            </div>
+          </div>
+        )
+      }
+      case 'temperature': {
+        // 分析温度问题
+        const tempProblems = []
+        let criticalCount = 0
+        let warningCount = 0
+
+        ensureArray(temperature_data).forEach(row => {
+          const severity = String(row.Severity || '').toLowerCase()
+          if (severity === 'critical') criticalCount++
+          else if (severity === 'warning') warningCount++
+        })
+
+        if (criticalCount > 0) {
+          tempProblems.push({
+            severity: 'critical',
+            summary: `${criticalCount} 个传感器温度严重过高，可能导致设备损坏`,
+            kbType: 'CABLE_HIGH_TEMPERATURE'
+          })
+        }
+        if (warningCount > 0) {
+          tempProblems.push({
+            severity: 'warning',
+            summary: `${warningCount} 个传感器温度偏高，建议检查散热`,
+            kbType: 'CABLE_HIGH_TEMPERATURE'
+          })
+        }
+
+        return (
+          <div className="scroll-area">
+            <div className="card">
+              <h2>Temperature Sensors</h2>
+              <p>Switch and device temperature monitoring from TEMPERATURE_SENSORS table.</p>
+
+              <ProblemSummary
+                title="温度监控"
+                problems={tempProblems}
+                totalChecked={ensureArray(temperature_data).length}
+                dataType="temperature"
+              />
+
+              {temperature_summary && (
+                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
+                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>Total Sensors:</strong> {temperature_summary.total_sensors || 0}</div>
+                    <div><strong>Avg Temp:</strong> {temperature_summary.avg_temperature || 0}°C</div>
+                    <div><strong>Max Temp:</strong> {temperature_summary.max_temperature || 0}°C</div>
+                  </div>
+                </div>
+              )}
+
+              <PaginatedTable
+                rows={temperature_data}
+                totalRows={temperature_total_rows}
+                serverPreviewLimit={preview_row_limit}
+              />
+            </div>
+          </div>
+        )
+      }
+      case 'power': {
+        // 分析电源问题
+        const powerProblems = []
+        let psuCriticalCount = 0
+        let psuWarningCount = 0
+        let notPresentCount = 0
+
+        ensureArray(power_data).forEach(row => {
+          const severity = String(row.Severity || '').toLowerCase()
+          if (severity === 'critical') psuCriticalCount++
+          else if (severity === 'warning') psuWarningCount++
+          if (row.IsPresent === false) notPresentCount++
+        })
+
+        if (psuCriticalCount > 0) {
+          powerProblems.push({
+            severity: 'critical',
+            summary: `${psuCriticalCount} 个电源有严重故障，可能影响设备运行`,
+            kbType: 'FAN_SPEED_LOW'
+          })
+        }
+        if (psuWarningCount > 0) {
+          powerProblems.push({
+            severity: 'warning',
+            summary: `${psuWarningCount} 个电源有告警状态`,
+            kbType: 'FAN_SPEED_LOW'
+          })
+        }
+        if (notPresentCount > 0) {
+          powerProblems.push({
+            severity: 'info',
+            summary: `${notPresentCount} 个电源槽位未安装模块`,
+            kbType: 'FAN_SPEED_LOW'
+          })
+        }
+
+        return (
+          <div className="scroll-area">
+            <div className="card">
+              <h2>Power Supplies</h2>
+              <p>Power supply unit status and health from POWER_SUPPLIES table.</p>
+
+              <ProblemSummary
+                title="电源状态"
+                problems={powerProblems}
+                totalChecked={ensureArray(power_data).length}
+                dataType="power"
+              />
+
+              {power_summary && (
+                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
+                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>Total PSUs:</strong> {power_summary.total_psus || 0}</div>
+                    <div><strong>Present:</strong> {power_summary.present_count || 0}</div>
+                    <div><strong>Total Power:</strong> {power_summary.total_power_consumption || 0}W</div>
+                  </div>
+                </div>
+              )}
+
+              <PaginatedTable
+                rows={power_data}
+                totalRows={power_total_rows}
+                serverPreviewLimit={preview_row_limit}
+              />
+            </div>
+          </div>
+        )
+      }
+      case 'switches': {
+        return (
+          <div className="scroll-area">
+            <div className="card">
+              <h2>Switch Information</h2>
+              <p>Switch-level configuration and adaptive routing status.</p>
+
+              {switch_summary && (
+                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
+                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>Total Switches:</strong> {switch_summary.total_switches || 0}</div>
+                    <div><strong>AR Enabled:</strong> {switch_summary.ar_enabled_count || 0}</div>
+                    <div><strong>FR Enabled:</strong> {switch_summary.fr_enabled_count || 0}</div>
+                    <div><strong>HBF Enabled:</strong> {switch_summary.hbf_enabled_count || 0}</div>
+                  </div>
+                </div>
+              )}
+
+              <PaginatedTable
+                rows={switch_data}
+                totalRows={switch_total_rows}
+                serverPreviewLimit={preview_row_limit}
+              />
+            </div>
+          </div>
+        )
+      }
+      case 'routing': {
+        // Analyze routing problems
+        const routingProblems = []
+        let rnErrorCount = 0
+        let frErrorCount = 0
+        let hbfFallbackCount = 0
+
+        ensureArray(routing_data).forEach(row => {
+          if (toNumber(row.RNErrors) > 0) rnErrorCount++
+          if (toNumber(row.FRErrors) > 0) frErrorCount++
+          if (toNumber(row.HBFFallbackLocal) > 0 || toNumber(row.HBFFallbackRemote) > 0) {
+            hbfFallbackCount++
+          }
+        })
+
+        if (frErrorCount > 0) {
+          routingProblems.push({
+            severity: 'critical',
+            summary: `${frErrorCount} 个端口有快速恢复错误，表明链路存在间歇性问题`,
+            kbType: 'XMIT_LINK_DOWN_COUNTER'
+          })
+        }
+        if (rnErrorCount > 0) {
+          routingProblems.push({
+            severity: 'warning',
+            summary: `${rnErrorCount} 个端口有RN (Re-route Notification) 错误`,
+            kbType: 'XMIT_FECN_BECN'
+          })
+        }
+        if (hbfFallbackCount > 0) {
+          routingProblems.push({
+            severity: 'warning',
+            summary: `${hbfFallbackCount} 个端口触发HBF回退，自适应路由效率可能受影响`,
+            kbType: 'XMIT_MODERATE_CONGESTION'
+          })
+        }
+
+        return (
+          <div className="scroll-area">
+            <div className="card">
+              <h2>Adaptive Routing Analysis</h2>
+              <p>RN counters, HBF statistics, and fast recovery status.</p>
+
+              <ProblemSummary
+                title="自适应路由分析"
+                problems={routingProblems}
+                totalChecked={ensureArray(routing_data).length}
+                dataType="routing"
+              />
+
+              {routing_summary && (
+                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
+                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>Total Ports:</strong> {routing_summary.total_ports || 0}</div>
+                    <div><strong>AR Traffic:</strong> {routing_summary.ports_with_ar_traffic || 0} ports</div>
+                    <div><strong>HBF Traffic:</strong> {routing_summary.ports_with_hbf_traffic || 0} ports</div>
+                    <div><strong>RN Errors:</strong> {routing_summary.total_rn_errors || 0}</div>
+                    <div><strong>FR Errors:</strong> {routing_summary.total_fr_errors || 0}</div>
+                  </div>
+                </div>
+              )}
+
+              <PaginatedTable
+                rows={routing_data}
+                totalRows={routing_total_rows}
+                serverPreviewLimit={preview_row_limit}
+              />
+            </div>
+          </div>
+        )
+      }
+      case 'port_health': {
+        // Analyze port health problems
+        const portHealthProblems = []
+        let icrcErrorCount = 0
+        let parityErrorCount = 0
+        let unhealthyCount = 0
+
+        ensureArray(port_health_data).forEach(row => {
+          if (toNumber(row.RxICRCErrors) > 0) icrcErrorCount++
+          if (toNumber(row.TxParityErrors) > 0) parityErrorCount++
+          if (toNumber(row.UnhealthyReason) > 0) unhealthyCount++
+        })
+
+        if (parityErrorCount > 0) {
+          portHealthProblems.push({
+            severity: 'critical',
+            summary: `${parityErrorCount} 个端口有奇偶校验错误，可能存在硬件故障`,
+            kbType: 'BER_CRITICAL'
+          })
+        }
+        if (unhealthyCount > 0) {
+          portHealthProblems.push({
+            severity: 'critical',
+            summary: `${unhealthyCount} 个端口被标记为不健康状态`,
+            kbType: 'XMIT_LINK_DOWN_COUNTER'
+          })
+        }
+        if (icrcErrorCount > 0) {
+          portHealthProblems.push({
+            severity: 'warning',
+            summary: `${icrcErrorCount} 个端口有ICRC错误，数据完整性受影响`,
+            kbType: 'BER_WARNING'
+          })
+        }
+
+        return (
+          <div className="scroll-area">
+            <div className="card">
+              <h2>Port Health Details</h2>
+              <p>ICRC errors, parity errors, FEC mode, and unhealthy port analysis.</p>
+
+              <ProblemSummary
+                title="端口健康详情"
+                problems={portHealthProblems}
+                totalChecked={ensureArray(port_health_data).length}
+                dataType="port_health"
+              />
+
+              {port_health_summary && (
+                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
+                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>Total Ports:</strong> {port_health_summary.total_ports || 0}</div>
+                    <div><strong>ICRC Errors:</strong> {port_health_summary.total_icrc_errors || 0}</div>
+                    <div><strong>Parity Errors:</strong> {port_health_summary.total_parity_errors || 0}</div>
+                    <div><strong>Unhealthy Ports:</strong> {port_health_summary.unhealthy_ports || 0}</div>
+                  </div>
+                </div>
+              )}
+
+              <PaginatedTable
+                rows={port_health_data}
+                totalRows={port_health_total_rows}
+                serverPreviewLimit={preview_row_limit}
+              />
+            </div>
+          </div>
+        )
+      }
+      case 'links': {
+        return (
+          <div className="scroll-area">
+            <div className="card">
+              <h2>Network Links</h2>
+              <p>Node-to-node connectivity and link topology.</p>
+
+              {links_summary && (
+                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
+                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>Total Links:</strong> {links_summary.total_links || 0}</div>
+                    <div><strong>Unique Nodes:</strong> {links_summary.unique_nodes || 0}</div>
+                    <div><strong>Avg Ports/Node:</strong> {links_summary.avg_ports_per_node || 0}</div>
+                    <div><strong>Max Ports/Node:</strong> {links_summary.max_ports_per_node || 0}</div>
+                    {links_summary.asymmetric_links > 0 && (
+                      <div style={{ color: '#ef4444' }}><strong>Asymmetric Links:</strong> {links_summary.asymmetric_links}</div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <PaginatedTable
+                rows={links_data}
+                totalRows={links_total_rows}
+                serverPreviewLimit={preview_row_limit}
+              />
+            </div>
+          </div>
+        )
+      }
+      case 'qos': {
+        return (
+          <div className="scroll-area">
+            <div className="card">
+              <h2>QoS / VL Arbitration</h2>
+              <p>Virtual Lane arbitration configuration and weight distribution analysis.</p>
+
+              {qos_summary && (
+                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
+                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>Total Ports:</strong> {qos_summary.total_ports_analyzed || 0}</div>
+                    <div><strong>Avg VLs/Port:</strong> {qos_summary.avg_vls_per_port || 0}</div>
+                    <div><strong>Single VL Ports:</strong> {qos_summary.ports_with_single_vl || 0}</div>
+                    <div><strong>High Priority Dominant:</strong> {qos_summary.ports_with_high_prio_dominant || 0}</div>
+                  </div>
+                </div>
+              )}
+
+              <PaginatedTable
+                rows={qos_data}
+                totalRows={qos_total_rows}
+                serverPreviewLimit={preview_row_limit}
+              />
+            </div>
+          </div>
+        )
+      }
+      case 'sm_info': {
+        return (
+          <div className="scroll-area">
+            <div className="card">
+              <h2>Subnet Manager</h2>
+              <p>SM state, priority, and master/standby configuration.</p>
+
+              {sm_info_summary && (
+                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
+                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>Total SMs:</strong> {sm_info_summary.total_sms || 0}</div>
+                    <div><strong>Master:</strong> {sm_info_summary.master_count || 0}</div>
+                    <div><strong>Standby:</strong> {sm_info_summary.standby_count || 0}</div>
+                    <div><strong>Redundancy:</strong> {sm_info_summary.has_redundancy ? 'Yes' : 'No'}</div>
+                    {sm_info_summary.master_sm && (
+                      <div><strong>Master Node:</strong> {sm_info_summary.master_sm.node_name}</div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <PaginatedTable
+                rows={sm_info_data}
+                totalRows={sm_info_total_rows}
+                serverPreviewLimit={preview_row_limit}
+              />
+            </div>
+          </div>
+        )
+      }
+      case 'port_hierarchy': {
+        return (
+          <div className="scroll-area">
+            <div className="card">
+              <h2>Port Hierarchy</h2>
+              <p>Network topology hierarchy and port tier/role information.</p>
+
+              {port_hierarchy_summary && (
+                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
+                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>Total Ports:</strong> {port_hierarchy_summary.total_ports || 0}</div>
+                    <div><strong>Unique Nodes:</strong> {port_hierarchy_summary.unique_nodes || 0}</div>
+                    <div><strong>Planes:</strong> {port_hierarchy_summary.plane_count || 0}</div>
+                    <div><strong>Multi-Plane:</strong> {port_hierarchy_summary.is_multi_plane ? 'Yes' : 'No'}</div>
+                  </div>
+                  {port_hierarchy_summary.role_distribution && (
+                    <div style={{ marginTop: '8px' }}>
+                      <strong>Role Distribution:</strong>{' '}
+                      {Object.entries(port_hierarchy_summary.role_distribution).map(([role, count]) => (
+                        <span key={role} style={{ marginRight: '12px' }}>{role}: {count}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <PaginatedTable
+                rows={port_hierarchy_data}
+                totalRows={port_hierarchy_total_rows}
+                serverPreviewLimit={preview_row_limit}
+              />
+            </div>
+          </div>
+        )
+      }
+      case 'mlnx_counters': {
+        // Analyze MLNX counters problems
+        const mlnxProblems = []
+        let rnrCriticalCount = 0
+        let rnrWarningCount = 0
+        let timeoutCount = 0
+        let qpErrorCount = 0
+
+        ensureArray(mlnx_counters_data).forEach(row => {
+          const severity = String(row.Severity || '').toLowerCase()
+          if (severity === 'critical') rnrCriticalCount++
+          else if (severity === 'warning') rnrWarningCount++
+          if (toNumber(row.Timeouts) > 0) timeoutCount++
+          if (toNumber(row.TotalErrors) > 0) qpErrorCount++
+        })
+
+        if (rnrCriticalCount > 0) {
+          mlnxProblems.push({
+            severity: 'critical',
+            summary: `${rnrCriticalCount} 个端口有严重的RNR/超时问题，可能导致性能下降`,
+            kbType: 'XMIT_SEVERE_CONGESTION'
+          })
+        }
+        if (rnrWarningCount > 0) {
+          mlnxProblems.push({
+            severity: 'warning',
+            summary: `${rnrWarningCount} 个端口有RNR重试或超时警告`,
+            kbType: 'XMIT_MODERATE_CONGESTION'
+          })
+        }
+        if (qpErrorCount > 0) {
+          mlnxProblems.push({
+            severity: 'warning',
+            summary: `${qpErrorCount} 个端口有QP(Queue Pair)错误`,
+            kbType: 'BER_WARNING'
+          })
+        }
+
+        return (
+          <div className="scroll-area">
+            <div className="card">
+              <h2>Mellanox Counters (MLNX_CNTRS_INFO)</h2>
+              <p>RNR retries, timeouts, and Queue Pair error analysis.</p>
+
+              <ProblemSummary
+                title="MLNX计数器分析"
+                problems={mlnxProblems}
+                totalChecked={ensureArray(mlnx_counters_data).length}
+                dataType="mlnx_counters"
+              />
+
+              {mlnx_counters_summary && (
+                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
+                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>Ports Analyzed:</strong> {mlnx_counters_summary.total_ports_analyzed || 0}</div>
+                    <div><strong>Ports with Activity:</strong> {mlnx_counters_summary.total_ports_with_activity || 0}</div>
+                    <div><strong>RNR Retries:</strong> {mlnx_counters_summary.total_rnr_retries?.toLocaleString() || 0}</div>
+                    <div><strong>Timeouts:</strong> {mlnx_counters_summary.total_timeouts?.toLocaleString() || 0}</div>
+                    <div><strong>QP Errors:</strong> {mlnx_counters_summary.total_qp_errors || 0}</div>
+                  </div>
+                </div>
+              )}
+
+              <PaginatedTable
+                rows={mlnx_counters_data}
+                totalRows={mlnx_counters_total_rows}
+                serverPreviewLimit={preview_row_limit}
+              />
+            </div>
+          </div>
+        )
+      }
+      case 'pm_delta': {
+        // Analyze PM Delta problems
+        const pmDeltaProblems = []
+        let fecCriticalCount = 0
+        let fecWarningCount = 0
+        let relayErrorCount = 0
+
+        ensureArray(pm_delta_data).forEach(row => {
+          const severity = String(row.Severity || '').toLowerCase()
+          if (severity === 'critical') fecCriticalCount++
+          else if (severity === 'warning') fecWarningCount++
+          if (toNumber(row.RelayErrors) > 0) relayErrorCount++
+        })
+
+        if (fecCriticalCount > 0) {
+          pmDeltaProblems.push({
+            severity: 'critical',
+            summary: `${fecCriticalCount} 个端口在诊断期间有FEC不可纠正块，信号严重问题`,
+            kbType: 'BER_CRITICAL'
+          })
+        }
+        if (fecWarningCount > 0) {
+          pmDeltaProblems.push({
+            severity: 'warning',
+            summary: `${fecWarningCount} 个端口有高FEC纠正活动或其他警告`,
+            kbType: 'BER_WARNING'
+          })
+        }
+        if (relayErrorCount > 0) {
+          pmDeltaProblems.push({
+            severity: 'warning',
+            summary: `${relayErrorCount} 个端口有交换机中继错误`,
+            kbType: 'XMIT_FECN_BECN'
+          })
+        }
+
+        return (
+          <div className="scroll-area">
+            <div className="card">
+              <h2>Performance Monitor Delta (PM_DELTA)</h2>
+              <p>Real-time counter changes during ibdiagnet run: FEC activity, traffic, and active errors.</p>
+
+              <ProblemSummary
+                title="性能计数器增量分析"
+                problems={pmDeltaProblems}
+                totalChecked={ensureArray(pm_delta_data).length}
+                dataType="pm_delta"
+              />
+
+              {pm_delta_summary && (
+                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
+                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>Ports Sampled:</strong> {pm_delta_summary.total_ports_sampled || 0}</div>
+                    <div><strong>Ports with Activity:</strong> {pm_delta_summary.ports_with_activity || 0}</div>
+                    <div><strong>Total TX:</strong> {pm_delta_summary.total_xmit_gb || 0} GB</div>
+                    <div><strong>Total RX:</strong> {pm_delta_summary.total_rcv_gb || 0} GB</div>
+                    <div><strong>FEC Corrected:</strong> {pm_delta_summary.total_fec_corrected?.toLocaleString() || 0}</div>
+                    <div><strong>FEC Uncorrectable:</strong> {pm_delta_summary.total_fec_uncorrectable || 0}</div>
+                  </div>
+                </div>
+              )}
+
+              <PaginatedTable
+                rows={pm_delta_data}
+                totalRows={pm_delta_total_rows}
+                serverPreviewLimit={preview_row_limit}
+              />
+            </div>
+          </div>
+        )
+      }
+      case 'vports': {
+        return (
+          <div className="scroll-area">
+            <div className="card">
+              <h2>Virtual Ports (SR-IOV)</h2>
+              <p>Virtual node and port analysis for SR-IOV virtualization deployments.</p>
+
+              {vports_summary && (
+                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
+                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>Total VNodes:</strong> {vports_summary.total_vnodes || 0}</div>
+                    <div><strong>Total VPorts:</strong> {vports_summary.total_vports || 0}</div>
+                    <div><strong>Physical Nodes w/ VNodes:</strong> {vports_summary.physical_nodes_with_vnodes || 0}</div>
+                    <div><strong>Avg VNodes/Physical:</strong> {vports_summary.avg_vnodes_per_physical || 0}</div>
+                    <div><strong>Max VNodes/Physical:</strong> {vports_summary.max_vnodes_per_physical || 0}</div>
+                    <div><strong>Virtualization Enabled:</strong> {vports_summary.virtualization_enabled ? 'Yes' : 'No'}</div>
+                  </div>
+                </div>
+              )}
+
+              <PaginatedTable
+                rows={vports_data}
+                totalRows={vports_total_rows}
+                serverPreviewLimit={preview_row_limit}
+              />
+            </div>
+          </div>
+        )
+      }
+      case 'pkey': {
+        return (
+          <div className="scroll-area">
+            <div className="card">
+              <h2>Partition Keys (PKEY)</h2>
+              <p>Network isolation and security partitioning configuration.</p>
+
+              {pkey_summary && (
+                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
+                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>Total PKEY Entries:</strong> {pkey_summary.total_pkey_entries || 0}</div>
+                    <div><strong>Unique Partitions:</strong> {pkey_summary.unique_partitions || 0}</div>
+                    <div><strong>Unique Nodes:</strong> {pkey_summary.unique_nodes || 0}</div>
+                    <div><strong>Multi-Partition Nodes:</strong> {pkey_summary.nodes_with_multiple_partitions || 0}</div>
+                    <div><strong>Default Partition Nodes:</strong> {pkey_summary.default_partition_nodes || 0}</div>
+                    <div><strong>Isolation Enabled:</strong> {pkey_summary.isolation_enabled ? 'Yes' : 'No'}</div>
+                  </div>
+                  {pkey_summary.partition_list && pkey_summary.partition_list.length > 0 && (
+                    <div style={{ marginTop: '8px' }}>
+                      <strong>Partitions:</strong> {pkey_summary.partition_list.slice(0, 10).join(', ')}
+                      {pkey_summary.partition_list.length > 10 && ` ... and ${pkey_summary.partition_list.length - 10} more`}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <PaginatedTable
+                rows={pkey_data}
+                totalRows={pkey_total_rows}
+                serverPreviewLimit={preview_row_limit}
+              />
+            </div>
+          </div>
+        )
+      }
+      case 'system_info': {
+        return (
+          <div className="scroll-area">
+            <div className="card">
+              <h2>System Information</h2>
+              <p>Hardware inventory, serial numbers, and ibdiagnet run metadata.</p>
+
+              {system_info_summary && (
+                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
+                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>Total Devices:</strong> {system_info_summary.total_devices || 0}</div>
+                    <div><strong>Unique Serials:</strong> {system_info_summary.unique_serials || 0}</div>
+                    <div><strong>Product Types:</strong> {system_info_summary.product_types || 0}</div>
+                    <div><strong>Revision Types:</strong> {system_info_summary.revision_types || 0}</div>
+                  </div>
+                  {system_info_summary.ibdiagnet_version && (
+                    <div style={{ marginTop: '8px' }}>
+                      <strong>IBDiagnet Version:</strong> {system_info_summary.ibdiagnet_version}
+                    </div>
+                  )}
+                  {system_info_summary.run_date && (
+                    <div style={{ marginTop: '4px' }}>
+                      <strong>Run Date:</strong> {system_info_summary.run_date}
+                    </div>
+                  )}
+                  {system_info_summary.product_distribution && Object.keys(system_info_summary.product_distribution).length > 0 && (
+                    <div style={{ marginTop: '8px' }}>
+                      <strong>Product Distribution:</strong>
+                      <div style={{ marginTop: '4px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                        {Object.entries(system_info_summary.product_distribution).slice(0, 5).map(([product, count]) => (
+                          <span key={product} style={{ padding: '2px 8px', background: '#e2e8f0', borderRadius: '4px', fontSize: '0.85rem' }}>
+                            {product}: {count}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <PaginatedTable
+                rows={system_info_data}
+                totalRows={system_info_total_rows}
+                serverPreviewLimit={preview_row_limit}
+              />
+            </div>
+          </div>
+        )
+      }
+      case 'extended_port_info': {
+        return (
+          <div className="scroll-area">
+            <div className="card">
+              <h2>Extended Port Info</h2>
+              <p>Bandwidth utilization, unhealthy reasons, and FEC modes per speed.</p>
+
+              {extended_port_info_summary && (
+                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
+                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>Total Ports:</strong> {extended_port_info_summary.total_ports || 0}</div>
+                    <div><strong>Unhealthy Ports:</strong> <span style={{ color: extended_port_info_summary.unhealthy_ports > 0 ? '#dc2626' : '#22c55e' }}>{extended_port_info_summary.unhealthy_ports || 0}</span></div>
+                    <div><strong>Avg BW Utilization:</strong> {extended_port_info_summary.avg_bw_utilization?.toFixed(1) || 0}%</div>
+                    <div><strong>Max BW Utilization:</strong> {extended_port_info_summary.max_bw_utilization?.toFixed(1) || 0}%</div>
+                  </div>
+                  {extended_port_info_summary.unhealthy_reasons && Object.keys(extended_port_info_summary.unhealthy_reasons).length > 0 && (
+                    <div style={{ marginTop: '8px' }}>
+                      <strong>Unhealthy Reasons:</strong>
+                      <div style={{ marginTop: '4px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        {Object.entries(extended_port_info_summary.unhealthy_reasons).map(([reason, count]) => (
+                          <span key={reason} style={{ padding: '2px 8px', background: '#fecaca', color: '#991b1b', borderRadius: '4px', fontSize: '0.85rem' }}>
+                            {reason}: {count}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <PaginatedTable
+                rows={extended_port_info_data}
+                totalRows={extended_port_info_total_rows}
+                serverPreviewLimit={preview_row_limit}
+              />
+            </div>
+          </div>
+        )
+      }
+      case 'ar_info': {
+        return (
+          <div className="scroll-area">
+            <div className="card">
+              <h2>Adaptive Routing (AR)</h2>
+              <p>AR, Fast Recovery (FR), and Hash-Based Forwarding (HBF) configuration.</p>
+
+              {ar_info_summary && (
+                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
+                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>Total Switches:</strong> {ar_info_summary.total_switches || 0}</div>
+                    <div><strong>AR Supported:</strong> {ar_info_summary.ar_supported || 0}</div>
+                    <div><strong>FR Enabled:</strong> {ar_info_summary.fr_enabled || 0} / {ar_info_summary.fr_supported || 0}</div>
+                    <div><strong>HBF Enabled:</strong> {ar_info_summary.hbf_enabled || 0} / {ar_info_summary.hbf_supported || 0}</div>
+                  </div>
+                  <div style={{ marginTop: '8px', display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>FR Coverage:</strong> <span style={{ color: ar_info_summary.fr_coverage_pct >= 80 ? '#22c55e' : '#eab308' }}>{ar_info_summary.fr_coverage_pct?.toFixed(1) || 0}%</span></div>
+                    <div><strong>HBF Coverage:</strong> <span style={{ color: ar_info_summary.hbf_coverage_pct >= 80 ? '#22c55e' : '#eab308' }}>{ar_info_summary.hbf_coverage_pct?.toFixed(1) || 0}%</span></div>
+                    <div><strong>PFRN Enabled:</strong> {ar_info_summary.pfrn_enabled || 0} / {ar_info_summary.pfrn_supported || 0}</div>
+                  </div>
+                </div>
+              )}
+
+              <PaginatedTable
+                rows={ar_info_data}
+                totalRows={ar_info_total_rows}
+                serverPreviewLimit={preview_row_limit}
+              />
+            </div>
+          </div>
+        )
+      }
+      case 'sharp': {
+        return (
+          <div className="scroll-area">
+            <div className="card">
+              <h2>SHARP (Scalable Hierarchical Aggregation)</h2>
+              <p>SHARP aggregation nodes for AI/ML collective operations.</p>
+
+              {sharp_summary && (
+                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
+                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>SHARP Nodes:</strong> {sharp_summary.total_sharp_nodes || 0}</div>
+                    <div><strong>SHARP Enabled:</strong> {sharp_summary.sharp_enabled ? 'Yes' : 'No'}</div>
+                    <div><strong>Total Tree Capacity:</strong> {sharp_summary.total_tree_capacity || 0}</div>
+                    <div><strong>Total Jobs Capacity:</strong> {sharp_summary.total_jobs_capacity || 0}</div>
+                  </div>
+                  <div style={{ marginTop: '8px', display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>Avg Tree Size:</strong> {sharp_summary.avg_tree_size || 0}</div>
+                    <div><strong>Avg Jobs/Node:</strong> {sharp_summary.avg_jobs_per_node || 0}</div>
+                    <div><strong>Max QPs/Node:</strong> {sharp_summary.max_qps_per_node || 0}</div>
+                  </div>
+                  {sharp_summary.data_types_supported && sharp_summary.data_types_supported.length > 0 && (
+                    <div style={{ marginTop: '8px' }}>
+                      <strong>Supported Data Types:</strong>
+                      <div style={{ marginTop: '4px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        {sharp_summary.data_types_supported.map(dtype => (
+                          <span key={dtype} style={{ padding: '2px 8px', background: '#dbeafe', color: '#1e40af', borderRadius: '4px', fontSize: '0.85rem' }}>
+                            {dtype}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <PaginatedTable
+                rows={sharp_data}
+                totalRows={sharp_total_rows}
+                serverPreviewLimit={preview_row_limit}
+              />
+            </div>
+          </div>
+        )
+      }
+      case 'fec_mode': {
+        return (
+          <div className="scroll-area">
+            <div className="card">
+              <h2>FEC Mode Configuration</h2>
+              <p>Forward Error Correction support and enablement per speed.</p>
+
+              {fec_mode_summary && (
+                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
+                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>Total Ports:</strong> {fec_mode_summary.total_ports || 0}</div>
+                    <div><strong>Ports without FEC:</strong> <span style={{ color: fec_mode_summary.ports_without_fec > 0 ? '#eab308' : '#22c55e' }}>{fec_mode_summary.ports_without_fec || 0}</span></div>
+                    <div><strong>Ports with RS-FEC:</strong> {fec_mode_summary.ports_with_rs_fec || 0}</div>
+                    <div><strong>Config Mismatches:</strong> <span style={{ color: fec_mode_summary.mismatch_count > 0 ? '#dc2626' : '#22c55e' }}>{fec_mode_summary.mismatch_count || 0}</span></div>
+                  </div>
+                  <div style={{ marginTop: '8px', display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>HDR Capable:</strong> {fec_mode_summary.hdr_capable_ports || 0}</div>
+                    <div><strong>NDR Capable:</strong> {fec_mode_summary.ndr_capable_ports || 0}</div>
+                  </div>
+                  {fec_mode_summary.fec_active_distribution && Object.keys(fec_mode_summary.fec_active_distribution).length > 0 && (
+                    <div style={{ marginTop: '8px' }}>
+                      <strong>FEC Active Distribution:</strong>
+                      <div style={{ marginTop: '4px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        {Object.entries(fec_mode_summary.fec_active_distribution).slice(0, 5).map(([mode, count]) => (
+                          <span key={mode} style={{ padding: '2px 8px', background: mode.includes('RS-FEC') ? '#dcfce7' : '#fef3c7', color: mode.includes('RS-FEC') ? '#166534' : '#92400e', borderRadius: '4px', fontSize: '0.85rem' }}>
+                            {mode}: {count}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <PaginatedTable
+                rows={fec_mode_data}
+                totalRows={fec_mode_total_rows}
+                serverPreviewLimit={preview_row_limit}
+              />
+            </div>
+          </div>
+        )
+      }
+      case 'phy_diagnostics': {
+        return (
+          <div className="scroll-area">
+            <div className="card">
+              <h2>Physical Layer Diagnostics</h2>
+              <p>PHY-level signal integrity and diagnostic data.</p>
+
+              {phy_diagnostics_summary && (
+                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
+                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>Total Ports:</strong> {phy_diagnostics_summary.total_ports || 0}</div>
+                    <div><strong>Diagnostic Fields:</strong> {phy_diagnostics_summary.total_diagnostic_fields || 0}</div>
+                    <div><strong>Ports with Data:</strong> {phy_diagnostics_summary.ports_with_data || 0}</div>
+                  </div>
+                  <div style={{ marginTop: '8px', display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>Avg Non-Zero Fields:</strong> {phy_diagnostics_summary.avg_non_zero_fields || 0}</div>
+                    <div><strong>Max Non-Zero Fields:</strong> {phy_diagnostics_summary.max_non_zero_fields || 0}</div>
+                  </div>
+                </div>
+              )}
+
+              <PaginatedTable
+                rows={phy_diagnostics_data}
+                totalRows={phy_diagnostics_total_rows}
+                serverPreviewLimit={preview_row_limit}
+              />
+            </div>
+          </div>
+        )
+      }
+      case 'neighbors': {
+        return (
+          <div className="scroll-area">
+            <div className="card">
+              <h2>Neighbors Topology</h2>
+              <p>Neighbor relationships and link properties for topology analysis.</p>
+
+              {neighbors_summary && (
+                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
+                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>Neighbor Entries:</strong> {neighbors_summary.total_neighbor_entries || 0}</div>
+                    <div><strong>Unique Nodes:</strong> {neighbors_summary.unique_nodes || 0}</div>
+                    <div><strong>Avg Connections/Node:</strong> {neighbors_summary.avg_connections_per_node || 0}</div>
+                    <div><strong>Max Connections:</strong> {neighbors_summary.max_connections_per_node || 0}</div>
+                  </div>
+                  <div style={{ marginTop: '8px', display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>Speed Mismatches:</strong> <span style={{ color: neighbors_summary.mismatched_speeds > 0 ? '#dc2626' : '#22c55e' }}>{neighbors_summary.mismatched_speeds || 0}</span></div>
+                    <div><strong>Width Mismatches:</strong> <span style={{ color: neighbors_summary.mismatched_widths > 0 ? '#dc2626' : '#22c55e' }}>{neighbors_summary.mismatched_widths || 0}</span></div>
+                  </div>
+                </div>
+              )}
+
+              <PaginatedTable
+                rows={neighbors_data}
+                totalRows={neighbors_total_rows}
+                serverPreviewLimit={preview_row_limit}
+              />
+            </div>
+          </div>
+        )
+      }
+      case 'buffer_histogram': {
+        return (
+          <div className="scroll-area">
+            <div className="card">
+              <h2>Buffer Histograms</h2>
+              <p>Buffer congestion analysis for bottleneck detection.</p>
+
+              {buffer_histogram_summary && (
+                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
+                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>Total Entries:</strong> {buffer_histogram_summary.total_entries || 0}</div>
+                    <div><strong>Total Samples:</strong> {buffer_histogram_summary.total_samples?.toLocaleString() || 0}</div>
+                    <div><strong>High Utilization:</strong> <span style={{ color: buffer_histogram_summary.high_utilization_count > 0 ? '#eab308' : '#22c55e' }}>{buffer_histogram_summary.high_utilization_count || 0}</span></div>
+                    <div><strong>Critical:</strong> <span style={{ color: buffer_histogram_summary.critical_utilization_count > 0 ? '#dc2626' : '#22c55e' }}>{buffer_histogram_summary.critical_utilization_count || 0}</span></div>
+                  </div>
+                  <div style={{ marginTop: '8px' }}>
+                    <strong>Max Utilization:</strong> {buffer_histogram_summary.max_utilization_pct || 0}%
+                  </div>
+                </div>
+              )}
+
+              <PaginatedTable
+                rows={buffer_histogram_data}
+                totalRows={buffer_histogram_total_rows}
+                serverPreviewLimit={preview_row_limit}
+              />
+            </div>
+          </div>
+        )
+      }
+      case 'extended_node_info': {
+        return (
+          <div className="scroll-area">
+            <div className="card">
+              <h2>Extended Node Information</h2>
+              <p>Extended node attributes and SMP capabilities.</p>
+
+              {extended_node_info_summary && (
+                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
+                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>Total Nodes:</strong> {extended_node_info_summary.total_nodes || 0}</div>
+                    <div><strong>Total Ports:</strong> {extended_node_info_summary.total_ports || 0}</div>
+                    <div><strong>Avg Ports/Node:</strong> {extended_node_info_summary.avg_ports_per_node || 0}</div>
+                    <div><strong>SMP Entries:</strong> {extended_node_info_summary.smp_entries || 0}</div>
+                  </div>
+                  {extended_node_info_summary.node_type_distribution && Object.keys(extended_node_info_summary.node_type_distribution).length > 0 && (
+                    <div style={{ marginTop: '8px' }}>
+                      <strong>Node Types:</strong>
+                      <div style={{ marginTop: '4px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        {Object.entries(extended_node_info_summary.node_type_distribution).map(([type, count]) => (
+                          <span key={type} style={{ padding: '2px 8px', background: '#e2e8f0', borderRadius: '4px', fontSize: '0.85rem' }}>
+                            {type}: {count}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <PaginatedTable
+                rows={extended_node_info_data}
+                totalRows={extended_node_info_total_rows}
+                serverPreviewLimit={preview_row_limit}
+              />
+            </div>
+          </div>
+        )
+      }
+      case 'extended_switch_info': {
+        return (
+          <div className="scroll-area">
+            <div className="card">
+              <h2>Extended Switch Information</h2>
+              <p>Switch-specific capabilities and LFT/multicast capacity.</p>
+
+              {extended_switch_info_summary && (
+                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
+                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>Total Switches:</strong> {extended_switch_info_summary.total_switches || 0}</div>
+                    <div><strong>Enhanced Port0:</strong> {extended_switch_info_summary.enhanced_port0_count || 0}</div>
+                    <div><strong>Multicast Enabled:</strong> {extended_switch_info_summary.multicast_enabled_count || 0}</div>
+                    <div><strong>AR Capable:</strong> {extended_switch_info_summary.ar_capable_count || 0}</div>
+                  </div>
+                  <div style={{ marginTop: '8px', display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>Total Multicast Cap:</strong> {extended_switch_info_summary.total_multicast_capacity?.toLocaleString() || 0}</div>
+                    <div><strong>Filter Raw Enabled:</strong> {extended_switch_info_summary.filter_raw_enabled_count || 0}</div>
+                  </div>
+                </div>
+              )}
+
+              <PaginatedTable
+                rows={extended_switch_info_data}
+                totalRows={extended_switch_info_total_rows}
+                serverPreviewLimit={preview_row_limit}
+              />
+            </div>
+          </div>
+        )
+      }
+      case 'power_sensors': {
+        return (
+          <div className="scroll-area">
+            <div className="card">
+              <h2>Power Sensors</h2>
+              <p>Individual power sensor readings for detailed power monitoring.</p>
+
+              {power_sensors_summary && (
+                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
+                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>Total Sensors:</strong> {power_sensors_summary.total_sensors || 0}</div>
+                    <div><strong>Unique Nodes:</strong> {power_sensors_summary.unique_nodes || 0}</div>
+                    <div><strong>Total Power:</strong> {power_sensors_summary.total_power_w?.toFixed(1) || 0} W</div>
+                    <div><strong>Max Sensor:</strong> {power_sensors_summary.max_sensor_power_mw?.toFixed(1) || 0} mW</div>
+                  </div>
+                  <div style={{ marginTop: '8px', display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>Warnings:</strong> <span style={{ color: power_sensors_summary.warning_count > 0 ? '#eab308' : '#22c55e' }}>{power_sensors_summary.warning_count || 0}</span></div>
+                    <div><strong>Critical:</strong> <span style={{ color: power_sensors_summary.critical_count > 0 ? '#dc2626' : '#22c55e' }}>{power_sensors_summary.critical_count || 0}</span></div>
+                  </div>
+                </div>
+              )}
+
+              <PaginatedTable
+                rows={power_sensors_data}
+                totalRows={power_sensors_total_rows}
+                serverPreviewLimit={preview_row_limit}
+              />
+            </div>
+          </div>
+        )
+      }
+      case 'routing_config': {
+        return (
+          <div className="scroll-area">
+            <div className="card">
+              <h2>HBF/PFRN Routing Configuration</h2>
+              <p>Hash-Based Forwarding and Precise Forwarding Routing Notification config.</p>
+
+              {routing_config_summary && (
+                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
+                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>Total Switches:</strong> {routing_config_summary.total_switches || 0}</div>
+                    <div><strong>HBF Enabled:</strong> {routing_config_summary.hbf_enabled_count || 0}</div>
+                    <div><strong>PFRN Enabled:</strong> {routing_config_summary.pfrn_enabled_count || 0}</div>
+                  </div>
+                  <div style={{ marginTop: '8px', display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>HBF Coverage:</strong> <span style={{ color: routing_config_summary.hbf_coverage_pct >= 80 ? '#22c55e' : '#eab308' }}>{routing_config_summary.hbf_coverage_pct?.toFixed(1) || 0}%</span></div>
+                    <div><strong>PFRN Coverage:</strong> <span style={{ color: routing_config_summary.pfrn_coverage_pct >= 80 ? '#22c55e' : '#eab308' }}>{routing_config_summary.pfrn_coverage_pct?.toFixed(1) || 0}%</span></div>
+                    <div><strong>Unique Seeds:</strong> {routing_config_summary.unique_seeds || 0}</div>
+                  </div>
+                </div>
+              )}
+
+              <PaginatedTable
+                rows={routing_config_data}
+                totalRows={routing_config_total_rows}
+                serverPreviewLimit={preview_row_limit}
+              />
+            </div>
+          </div>
+        )
+      }
+      case 'temp_alerts': {
+        return (
+          <div className="scroll-area">
+            <div className="card">
+              <h2>Temperature Alerts</h2>
+              <p>Temperature threshold configuration and alert status.</p>
+
+              {temp_alerts_summary && (
+                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
+                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>Total Sensors:</strong> {temp_alerts_summary.total_sensors || 0}</div>
+                    <div><strong>Max Temp:</strong> {temp_alerts_summary.max_temperature || 0}°C</div>
+                    <div><strong>Healthy:</strong> <span style={{ color: '#22c55e' }}>{temp_alerts_summary.healthy_sensors || 0}</span></div>
+                    <div><strong>Over Threshold:</strong> <span style={{ color: temp_alerts_summary.over_threshold_count > 0 ? '#dc2626' : '#22c55e' }}>{temp_alerts_summary.over_threshold_count || 0}</span></div>
+                  </div>
+                  <div style={{ marginTop: '8px', display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>Warnings:</strong> <span style={{ color: temp_alerts_summary.warning_count > 0 ? '#eab308' : '#22c55e' }}>{temp_alerts_summary.warning_count || 0}</span></div>
+                    <div><strong>Critical:</strong> <span style={{ color: temp_alerts_summary.critical_count > 0 ? '#dc2626' : '#22c55e' }}>{temp_alerts_summary.critical_count || 0}</span></div>
+                  </div>
+                </div>
+              )}
+
+              <PaginatedTable
+                rows={temp_alerts_data}
+                totalRows={temp_alerts_total_rows}
+                serverPreviewLimit={preview_row_limit}
+              />
+            </div>
+          </div>
+        )
+      }
+      case 'credit_watchdog': {
+        return (
+          <div className="scroll-area">
+            <div className="card">
+              <h2>Credit Watchdog Timeouts</h2>
+              <p>Flow control credit watchdog timeout counters.</p>
+
+              {credit_watchdog_summary && (
+                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
+                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div><strong>Total Entries:</strong> {credit_watchdog_summary.total_entries || 0}</div>
+                    <div><strong>Ports with Timeouts:</strong> <span style={{ color: credit_watchdog_summary.ports_with_timeouts > 0 ? '#dc2626' : '#22c55e' }}>{credit_watchdog_summary.ports_with_timeouts || 0}</span></div>
+                    <div><strong>Total Timeout Events:</strong> {credit_watchdog_summary.total_timeout_events?.toLocaleString() || 0}</div>
+                    <div><strong>Max Count:</strong> {credit_watchdog_summary.max_timeout_count?.toLocaleString() || 0}</div>
+                  </div>
+                  <div style={{ marginTop: '8px' }}>
+                    <strong>Affected VLs:</strong> {credit_watchdog_summary.affected_vls || 0}
+                  </div>
+                </div>
+              )}
+
+              <PaginatedTable
+                rows={credit_watchdog_data}
+                totalRows={credit_watchdog_total_rows}
+                serverPreviewLimit={preview_row_limit}
+              />
+            </div>
+          </div>
+        )
+      }
+      case 'pci_performance': {
+        return (
+          <div className="scroll-area">
+            <div className="card">
+              <h2><HardDrive size={20} /> PCIe Performance</h2>
+              {pci_performance_summary && (
+                <div className="summary-box" style={{ marginBottom: '16px', padding: '12px', background: 'var(--sidebar-bg)', borderRadius: '8px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
+                    <div><strong>Total Nodes:</strong> {pci_performance_summary.total_nodes || 0}</div>
+                    <div><strong>Degraded:</strong> <span style={{ color: pci_performance_summary.degraded_count > 0 ? '#dc2626' : '#22c55e' }}>{pci_performance_summary.degraded_count || 0}</span></div>
+                    <div><strong>AER Errors:</strong> <span style={{ color: pci_performance_summary.aer_error_nodes > 0 ? '#dc2626' : '#22c55e' }}>{pci_performance_summary.aer_error_nodes || 0}</span></div>
+                    <div><strong>Avg Bandwidth:</strong> {pci_performance_summary.avg_bandwidth_gbps?.toFixed(1) || 0} GB/s</div>
+                  </div>
+                  {pci_performance_summary.gen_distribution && Object.keys(pci_performance_summary.gen_distribution).length > 0 && (
+                    <div style={{ marginTop: '12px' }}>
+                      <strong>Generation Distribution:</strong>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '4px' }}>
+                        {Object.entries(pci_performance_summary.gen_distribution).map(([gen, count]) => (
+                          <span key={gen} style={{ background: 'var(--button-bg)', padding: '4px 8px', borderRadius: '4px', fontSize: '0.85em' }}>
+                            {gen}: {count}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <PaginatedTable
+                rows={pci_performance_data}
+                totalRows={pci_performance_total_rows}
+                serverPreviewLimit={preview_row_limit}
+              />
+            </div>
+          </div>
+        )
+      }
+      case 'ber_advanced': {
+        return (
+          <div className="scroll-area">
+            <div className="card">
+              <h2><BarChart3 size={20} /> BER Advanced Analysis</h2>
+              {ber_advanced_summary && (
+                <div className="summary-box" style={{ marginBottom: '16px', padding: '12px', background: 'var(--sidebar-bg)', borderRadius: '8px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
+                    <div><strong>Total Ports:</strong> {ber_advanced_summary.total_ports || 0}</div>
+                    <div><strong>Critical BER:</strong> <span style={{ color: ber_advanced_summary.critical_ber_count > 0 ? '#dc2626' : '#22c55e' }}>{ber_advanced_summary.critical_ber_count || 0}</span></div>
+                    <div><strong>Warning BER:</strong> <span style={{ color: ber_advanced_summary.warning_ber_count > 0 ? '#f59e0b' : '#22c55e' }}>{ber_advanced_summary.warning_ber_count || 0}</span></div>
+                    <div><strong>Healthy Ports:</strong> <span style={{ color: '#22c55e' }}>{ber_advanced_summary.healthy_ports || 0}</span></div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginTop: '12px' }}>
+                    <div><strong>Lanes Analyzed:</strong> {ber_advanced_summary.total_lanes_analyzed?.toLocaleString() || 0}</div>
+                    <div><strong>FEC Corrected:</strong> {ber_advanced_summary.fec_corrected_total?.toLocaleString() || 0}</div>
+                    <div><strong>FEC Uncorrected:</strong> <span style={{ color: ber_advanced_summary.fec_uncorrected_total > 0 ? '#dc2626' : '#22c55e' }}>{ber_advanced_summary.fec_uncorrected_total?.toLocaleString() || 0}</span></div>
+                    {ber_advanced_summary.worst_ber_log10 && <div><strong>Worst BER:</strong> 10^{ber_advanced_summary.worst_ber_log10}</div>}
+                  </div>
+                </div>
+              )}
+
+              <PaginatedTable
+                rows={ber_advanced_data}
+                totalRows={ber_advanced_total_rows}
+                serverPreviewLimit={preview_row_limit}
+              />
+            </div>
+          </div>
+        )
+      }
+      case 'cable_enhanced': {
+        return (
+          <div className="scroll-area">
+            <div className="card">
+              <h2><PlugZap size={20} /> Cable Enhanced Analysis</h2>
+              {cable_enhanced_summary && (
+                <div className="summary-box" style={{ marginBottom: '16px', padding: '12px', background: 'var(--sidebar-bg)', borderRadius: '8px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px' }}>
+                    <div><strong>Total Cables:</strong> {cable_enhanced_summary.total_cables || 0}</div>
+                    <div><strong>Optical:</strong> {cable_enhanced_summary.optical_count || 0}</div>
+                    <div><strong>AOC:</strong> {cable_enhanced_summary.aoc_count || 0}</div>
+                    <div><strong>Copper:</strong> {cable_enhanced_summary.copper_count || 0}</div>
+                    <div><strong>DOM Capable:</strong> {cable_enhanced_summary.dom_capable_count || 0}</div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginTop: '12px' }}>
+                    <div><strong>Temp Warnings:</strong> <span style={{ color: cable_enhanced_summary.temp_warning_count > 0 ? '#f59e0b' : '#22c55e' }}>{cable_enhanced_summary.temp_warning_count || 0}</span></div>
+                    <div><strong>Temp Critical:</strong> <span style={{ color: cable_enhanced_summary.temp_critical_count > 0 ? '#dc2626' : '#22c55e' }}>{cable_enhanced_summary.temp_critical_count || 0}</span></div>
+                    <div><strong>Power Issues:</strong> <span style={{ color: (cable_enhanced_summary.power_warning_count + cable_enhanced_summary.power_critical_count) > 0 ? '#dc2626' : '#22c55e' }}>{(cable_enhanced_summary.power_warning_count || 0) + (cable_enhanced_summary.power_critical_count || 0)}</span></div>
+                    <div><strong>Compliance Issues:</strong> <span style={{ color: cable_enhanced_summary.compliance_issues > 0 ? '#f59e0b' : '#22c55e' }}>{cable_enhanced_summary.compliance_issues || 0}</span></div>
+                  </div>
+                </div>
+              )}
+
+              <PaginatedTable
+                rows={cable_enhanced_data}
+                totalRows={cable_enhanced_total_rows}
+                serverPreviewLimit={preview_row_limit}
+              />
+            </div>
+          </div>
+        )
+      }
+      case 'per_lane_performance': {
+        return (
+          <div className="scroll-area">
+            <div className="card">
+              <h2><Layers size={20} /> Per-Lane Performance</h2>
+              {per_lane_performance_summary && (
+                <div className="summary-box" style={{ marginBottom: '16px', padding: '12px', background: 'var(--sidebar-bg)', borderRadius: '8px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
+                    <div><strong>Lanes Analyzed:</strong> {per_lane_performance_summary.total_lanes_analyzed?.toLocaleString() || 0}</div>
+                    <div><strong>Ports Analyzed:</strong> {per_lane_performance_summary.total_ports_analyzed || 0}</div>
+                    <div><strong>Lanes with Issues:</strong> <span style={{ color: per_lane_performance_summary.lanes_with_issues > 0 ? '#dc2626' : '#22c55e' }}>{per_lane_performance_summary.lanes_with_issues || 0}</span></div>
+                    <div><strong>Issue Rate:</strong> <span style={{ color: per_lane_performance_summary.issue_rate_pct > 1 ? '#dc2626' : '#22c55e' }}>{per_lane_performance_summary.issue_rate_pct || 0}%</span></div>
+                  </div>
+                  {per_lane_performance_summary.lane_error_distribution && Object.keys(per_lane_performance_summary.lane_error_distribution).length > 0 && (
+                    <div style={{ marginTop: '12px' }}>
+                      <strong>Errors by Lane:</strong>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '4px' }}>
+                        {Object.entries(per_lane_performance_summary.lane_error_distribution).map(([lane, count]) => (
+                          <span key={lane} style={{ background: count > 0 ? '#fee2e2' : 'var(--button-bg)', padding: '4px 8px', borderRadius: '4px', fontSize: '0.85em' }}>
+                            Lane {lane}: {count}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <PaginatedTable
+                rows={per_lane_performance_data}
+                totalRows={per_lane_performance_total_rows}
+                serverPreviewLimit={preview_row_limit}
+              />
+            </div>
+          </div>
+        )
+      }
+      case 'n2n_security': {
+        return (
+          <div className="scroll-area">
+            <div className="card">
+              <h2><Shield size={20} /> N2N Security</h2>
+              {n2n_security_summary && (
+                <div className="summary-box" style={{ marginBottom: '16px', padding: '12px', background: 'var(--sidebar-bg)', borderRadius: '8px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
+                    <div><strong>Total Nodes:</strong> {n2n_security_summary.total_nodes || 0}</div>
+                    <div><strong>N2N Enabled:</strong> {n2n_security_summary.nodes_with_n2n_enabled || 0} ({n2n_security_summary.n2n_coverage_pct || 0}%)</div>
+                    <div><strong>With Keys:</strong> {n2n_security_summary.nodes_with_keys || 0} ({n2n_security_summary.key_coverage_pct || 0}%)</div>
+                    <div><strong>Security Violations:</strong> <span style={{ color: n2n_security_summary.security_violations > 0 ? '#dc2626' : '#22c55e' }}>{n2n_security_summary.security_violations || 0}</span></div>
+                  </div>
+                  {n2n_security_summary.capability_distribution && Object.keys(n2n_security_summary.capability_distribution).length > 0 && (
+                    <div style={{ marginTop: '12px' }}>
+                      <strong>Capability Distribution:</strong>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '4px' }}>
+                        {Object.entries(n2n_security_summary.capability_distribution).slice(0, 6).map(([cap, count]) => (
+                          <span key={cap} style={{ background: 'var(--button-bg)', padding: '4px 8px', borderRadius: '4px', fontSize: '0.85em' }}>
+                            {cap}: {count}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <PaginatedTable
+                rows={n2n_security_data}
+                totalRows={n2n_security_total_rows}
                 serverPreviewLimit={preview_row_limit}
               />
             </div>
@@ -1018,9 +2766,6 @@ function PaginatedTable({ rows, totalRows, serverPreviewLimit, emptyDebug }) {
               <div className={`tab ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>
                 <Activity size={16} /> Overview
               </div>
-              <div className={`tab ${activeTab === 'topology' ? 'active' : ''}`} onClick={() => setActiveTab('topology')}>
-                <Network size={16} /> Topology
-              </div>
               <div className={`tab ${activeTab === 'cable' ? 'active' : ''}`} onClick={() => setActiveTab('cable')}>
                 <Server size={16} /> Cable Issues
               </div>
@@ -1038,6 +2783,102 @@ function PaginatedTable({ rows, totalRows, serverPreviewLimit, emptyDebug }) {
               </div>
               <div className={`tab ${activeTab === 'fan' ? 'active' : ''}`} onClick={() => setActiveTab('fan')}>
                 <FanIcon size={16} /> Fans
+              </div>
+              <div className={`tab ${activeTab === 'temperature' ? 'active' : ''}`} onClick={() => setActiveTab('temperature')}>
+                <Thermometer size={16} /> Temp
+              </div>
+              <div className={`tab ${activeTab === 'power' ? 'active' : ''}`} onClick={() => setActiveTab('power')}>
+                <Zap size={16} /> Power
+              </div>
+              <div className={`tab ${activeTab === 'switches' ? 'active' : ''}`} onClick={() => setActiveTab('switches')}>
+                <Network size={16} /> Switches
+              </div>
+              <div className={`tab ${activeTab === 'routing' ? 'active' : ''}`} onClick={() => setActiveTab('routing')}>
+                <GitBranch size={16} /> Routing
+              </div>
+              <div className={`tab ${activeTab === 'port_health' ? 'active' : ''}`} onClick={() => setActiveTab('port_health')}>
+                <Gauge size={16} /> Port Health
+              </div>
+              <div className={`tab ${activeTab === 'links' ? 'active' : ''}`} onClick={() => setActiveTab('links')}>
+                <Link size={16} /> Links
+              </div>
+              <div className={`tab ${activeTab === 'qos' ? 'active' : ''}`} onClick={() => setActiveTab('qos')}>
+                <Layers size={16} /> QoS
+              </div>
+              <div className={`tab ${activeTab === 'sm_info' ? 'active' : ''}`} onClick={() => setActiveTab('sm_info')}>
+                <Settings size={16} /> SM
+              </div>
+              <div className={`tab ${activeTab === 'port_hierarchy' ? 'active' : ''}`} onClick={() => setActiveTab('port_hierarchy')}>
+                <Database size={16} /> Hierarchy
+              </div>
+              <div className={`tab ${activeTab === 'mlnx_counters' ? 'active' : ''}`} onClick={() => setActiveTab('mlnx_counters')}>
+                <ChipIcon size={16} /> MLNX Counters
+              </div>
+              <div className={`tab ${activeTab === 'pm_delta' ? 'active' : ''}`} onClick={() => setActiveTab('pm_delta')}>
+                <BarChart2 size={16} /> PM Delta
+              </div>
+              <div className={`tab ${activeTab === 'vports' ? 'active' : ''}`} onClick={() => setActiveTab('vports')}>
+                <Box size={16} /> VPorts
+              </div>
+              <div className={`tab ${activeTab === 'pkey' ? 'active' : ''}`} onClick={() => setActiveTab('pkey')}>
+                <Key size={16} /> PKEY
+              </div>
+              <div className={`tab ${activeTab === 'system_info' ? 'active' : ''}`} onClick={() => setActiveTab('system_info')}>
+                <Info size={16} /> System
+              </div>
+              <div className={`tab ${activeTab === 'extended_port_info' ? 'active' : ''}`} onClick={() => setActiveTab('extended_port_info')}>
+                <PlugZap size={16} /> Port Ext
+              </div>
+              <div className={`tab ${activeTab === 'ar_info' ? 'active' : ''}`} onClick={() => setActiveTab('ar_info')}>
+                <Shuffle size={16} /> AR
+              </div>
+              <div className={`tab ${activeTab === 'sharp' ? 'active' : ''}`} onClick={() => setActiveTab('sharp')}>
+                <BrainCircuit size={16} /> SHARP
+              </div>
+              <div className={`tab ${activeTab === 'fec_mode' ? 'active' : ''}`} onClick={() => setActiveTab('fec_mode')}>
+                <Shield size={16} /> FEC
+              </div>
+              <div className={`tab ${activeTab === 'phy_diagnostics' ? 'active' : ''}`} onClick={() => setActiveTab('phy_diagnostics')}>
+                <Radio size={16} /> PHY
+              </div>
+              <div className={`tab ${activeTab === 'neighbors' ? 'active' : ''}`} onClick={() => setActiveTab('neighbors')}>
+                <Users size={16} /> Neighbors
+              </div>
+              <div className={`tab ${activeTab === 'buffer_histogram' ? 'active' : ''}`} onClick={() => setActiveTab('buffer_histogram')}>
+                <BarChart3 size={16} /> Buffers
+              </div>
+              <div className={`tab ${activeTab === 'extended_node_info' ? 'active' : ''}`} onClick={() => setActiveTab('extended_node_info')}>
+                <HardDrive size={16} /> Nodes
+              </div>
+              <div className={`tab ${activeTab === 'extended_switch_info' ? 'active' : ''}`} onClick={() => setActiveTab('extended_switch_info')}>
+                <Network size={16} /> Switch Ext
+              </div>
+              <div className={`tab ${activeTab === 'power_sensors' ? 'active' : ''}`} onClick={() => setActiveTab('power_sensors')}>
+                <Zap size={16} /> Sensors
+              </div>
+              <div className={`tab ${activeTab === 'routing_config' ? 'active' : ''}`} onClick={() => setActiveTab('routing_config')}>
+                <Router size={16} /> HBF/PFRN
+              </div>
+              <div className={`tab ${activeTab === 'temp_alerts' ? 'active' : ''}`} onClick={() => setActiveTab('temp_alerts')}>
+                <ThermometerSun size={16} /> Temp Alerts
+              </div>
+              <div className={`tab ${activeTab === 'credit_watchdog' ? 'active' : ''}`} onClick={() => setActiveTab('credit_watchdog')}>
+                <Timer size={16} /> Credit WD
+              </div>
+              <div className={`tab ${activeTab === 'pci_performance' ? 'active' : ''}`} onClick={() => setActiveTab('pci_performance')}>
+                <HardDrive size={16} /> PCIe Perf
+              </div>
+              <div className={`tab ${activeTab === 'ber_advanced' ? 'active' : ''}`} onClick={() => setActiveTab('ber_advanced')}>
+                <BarChart3 size={16} /> BER Adv
+              </div>
+              <div className={`tab ${activeTab === 'cable_enhanced' ? 'active' : ''}`} onClick={() => setActiveTab('cable_enhanced')}>
+                <PlugZap size={16} /> Cable Enh
+              </div>
+              <div className={`tab ${activeTab === 'per_lane_performance' ? 'active' : ''}`} onClick={() => setActiveTab('per_lane_performance')}>
+                <Layers size={16} /> Per-Lane
+              </div>
+              <div className={`tab ${activeTab === 'n2n_security' ? 'active' : ''}`} onClick={() => setActiveTab('n2n_security')}>
+                <Shield size={16} /> N2N Sec
               </div>
             </div>
           )}
@@ -1063,7 +2904,7 @@ function PaginatedTable({ rows, totalRows, serverPreviewLimit, emptyDebug }) {
               </>
             ) : (
               <div className="placeholder">
-                <Network size={48} style={{opacity: 0.2, marginBottom: '20px'}} />
+                <Activity size={48} style={{opacity: 0.2, marginBottom: '20px'}} />
                 <p>Select a file from the sidebar to start analysis.</p>
               </div>
             )}
@@ -1074,30 +2915,41 @@ function PaginatedTable({ rows, totalRows, serverPreviewLimit, emptyDebug }) {
       {loading && (
         <div className="loading-overlay">
           <div className="spinner"></div>
-          <p>Processing Analysis... This may take a moment.</p>
-          {uploadProgress > 0 && uploadProgress < 100 && (
-            <div style={{ marginTop: '20px', width: '300px' }}>
-              <div style={{
-                width: '100%',
-                height: '8px',
-                backgroundColor: 'rgba(255,255,255,0.2)',
-                borderRadius: '4px',
-                overflow: 'hidden'
-              }}>
+          {uploadProgress > 0 && uploadProgress < 100 ? (
+            <>
+              <p>Uploading file... Please wait.</p>
+              <div style={{ marginTop: '20px', width: '300px' }}>
                 <div style={{
-                  width: `${uploadProgress}%`,
-                  height: '100%',
-                  backgroundColor: '#76b900',
-                  transition: 'width 0.3s ease'
-                }} />
+                  width: '100%',
+                  height: '8px',
+                  backgroundColor: 'rgba(255,255,255,0.2)',
+                  borderRadius: '4px',
+                  overflow: 'hidden'
+                }}>
+                  <div style={{
+                    width: `${uploadProgress}%`,
+                    height: '100%',
+                    backgroundColor: '#76b900',
+                    transition: 'width 0.3s ease'
+                  }} />
+                </div>
+                <p style={{ marginTop: '10px', fontSize: '0.9rem' }}>
+                  Progress: {uploadProgress}%
+                </p>
               </div>
-              <p style={{ marginTop: '10px', fontSize: '0.9rem' }}>
-                Uploading: {uploadProgress}%
+            </>
+          ) : (
+            <>
+              <p>Processing Analysis... This may take several minutes for large files.</p>
+              <p style={{ marginTop: '10px', fontSize: '0.85rem', opacity: 0.8 }}>
+                Please be patient. Backend is analyzing the network data.
               </p>
-            </div>
+            </>
           )}
         </div>
       )}
     </div>
   )
 }
+
+export default App

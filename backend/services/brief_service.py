@@ -33,10 +33,17 @@ class BriefService:
         xmit_df = pd.DataFrame(xmit_rows)
         merged = xmit_df.copy()
 
+        # Ensure PortNumber is string type for consistent merging
+        if "PortNumber" in merged.columns:
+            merged["PortNumber"] = merged["PortNumber"].astype(str)
+
         for rows in [cable_rows, ber_rows]:
             if not rows:
                 continue
             df = pd.DataFrame(rows)
+            # Ensure PortNumber is string type before merging
+            if "PortNumber" in df.columns:
+                df["PortNumber"] = df["PortNumber"].astype(str)
             merged = pd.merge(merged, df, on=["NodeGUID", "PortNumber"], how="left", suffixes=("", "_dup"))
 
         if hca_rows:

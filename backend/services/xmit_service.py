@@ -99,6 +99,13 @@ class XmitService:
         self._ports_df: pd.DataFrame | None = None
         self._credit_df: pd.DataFrame | None = None
 
+    def clear_cache(self):
+        """Clear cached DataFrames to free memory."""
+        self._df = None
+        self._topology = None
+        self._ports_df = None
+        self._credit_df = None
+
     def run(self) -> XmitAnalysis:
         df = self._load_dataframe()
         anomalies = self._build_anomalies(df)
@@ -116,7 +123,12 @@ class XmitService:
         tick_to_seconds = 4e-9
         duration = self._extract_duration(db_csv)
         df["WaitSeconds"] = df["PortXmitWaitTotal"] * tick_to_seconds
-        duration_seconds = float(duration) if duration and float(duration) > 0 else 1.0
+        # Safe duration conversion with validation
+        try:
+            duration_float = float(duration) if duration else 0.0
+            duration_seconds = duration_float if duration_float > 0 else 1.0
+        except (ValueError, TypeError):
+            duration_seconds = 1.0
         df["WaitRatioPct"] = (df["WaitSeconds"] / duration_seconds) * 100
         df["CongestionLevel"] = df["WaitRatioPct"].apply(self._classify_wait_ratio)
 
@@ -152,7 +164,11 @@ class XmitService:
         else:
             guid = str(row)
         if guid.startswith("0x"):
-            return hex(int(guid, 16))
+            try:
+                return hex(int(guid, 16))
+            except (ValueError, OverflowError):
+                logger.warning(f"Invalid hex GUID format: {guid}")
+                return guid
         return guid
 
     @staticmethod
@@ -253,26 +269,33 @@ class XmitService:
         ports = self._ports_table()
         if ports.empty:
             return df
+
+        # Ensure PortNumber columns have the same dtype before merging
+        df["PortNumber"] = df["PortNumber"].astype(str)
+        ports_subset = ports[
+            [
+                "NodeGUID",
+                "PortNumber",
+                "PortState",
+                "PortPhyState",
+                "LinkWidthActv",
+                "LinkWidthSup",
+                "LinkWidthEn",
+                "LinkSpeedActv",
+                "LinkSpeedEn",
+                "LinkSpeedSup",
+            ]
+        ].copy()
+        ports_subset["PortNumber"] = ports_subset["PortNumber"].astype(str)
+
         merged = df.merge(
-            ports[
-                [
-                    "NodeGUID",
-                    "PortNumber",
-                    "PortState",
-                    "PortPhyState",
-                    "LinkWidthActv",
-                    "LinkWidthSup",
-                    "LinkWidthEn",
-                    "LinkSpeedActv",
-                    "LinkSpeedEn",
-                    "LinkSpeedSup",
-                ]
-            ],
+            ports_subset,
             on=["NodeGUID", "PortNumber"],
             how="left",
         )
         credit = self._credit_watchdog_table()
         if not credit.empty:
+            credit["PortNumber"] = credit["PortNumber"].astype(str)
             merged = merged.merge(
                 credit,
                 on=["NodeGUID", "PortNumber"],
@@ -424,30 +447,38 @@ class XmitService:
         ports = self._ports_table()
         if ports.empty:
             return df
+
+        # Build neighbor lookup dictionary once (O(n) instead of O(n²))
         neighbor_cols = ports[["NodeGUID", "PortNumber", "PortState", "PortPhyState"]].copy()
         neighbor_cols["NeighborPortState"] = neighbor_cols["PortState"].apply(self._decode_port_state)
         neighbor_cols["NeighborPortPhyState"] = neighbor_cols["PortPhyState"].apply(self._decode_port_phy_state)
-        neighbor_cols.rename(columns={"NodeGUID": "NeighborGUID", "PortNumber": "NeighborPort"}, inplace=True)
-        neighbor_cols = neighbor_cols[["NeighborGUID", "NeighborPort", "NeighborPortState", "NeighborPortPhyState"]]
 
-        neighbor_map = {
-            (str(guid), int(port)): (state, phy)
-            for guid, port, state, phy in neighbor_cols.itertuples(index=False, name=None)
-            if guid and port is not None
-        }
+        # Create efficient lookup dictionary
+        neighbor_map = {}
+        for _, row in neighbor_cols.iterrows():
+            guid = str(row["NodeGUID"])
+            port = row["PortNumber"]
+            if guid and pd.notna(port):
+                try:
+                    neighbor_map[(guid, int(port))] = (row["NeighborPortState"], row["NeighborPortPhyState"])
+                except (ValueError, TypeError):
+                    continue
 
-        def lookup(row):
+        # Vectorized lookup using map
+        df = df.copy()
+
+        def lookup_neighbor(row):
             guid = row.get("Attached To GUID")
             port = row.get("Attached To Port")
             if guid is None or pd.isna(port):
-                return (None, None)
-            return neighbor_map.get((str(guid), int(port)))
+                return pd.Series([None, None])
+            try:
+                result = neighbor_map.get((str(guid), int(port)), (None, None))
+                return pd.Series(result)
+            except (ValueError, TypeError):
+                return pd.Series([None, None])
 
-        df = df.copy()
-        df[["NeighborPortState", "NeighborPortPhyState"]] = df.apply(
-            lambda row: pd.Series(lookup(row)),
-            axis=1,
-        )
+        df[["NeighborPortState", "NeighborPortPhyState"]] = df.apply(lookup_neighbor, axis=1)
         df["NeighborIsActive"] = df["NeighborPortState"].apply(
             lambda val: isinstance(val, str) and "Active" in val
         )

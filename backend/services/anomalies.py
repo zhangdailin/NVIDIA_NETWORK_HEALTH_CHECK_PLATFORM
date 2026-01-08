@@ -46,5 +46,30 @@ class AnomlyType(Enum):
     IBH_CABLE_MISMATCH = "Cable Media/Speed Mismatch"
     IBH_FAN_FAILURE = "Fan Speed Out of Range"
 
+    # routing / adaptive routing
+    IBH_ROUTING_RN_ERROR = "RN Routing Error"
+    IBH_ROUTING_FR_ERROR = "Fast Recovery Error"
+    IBH_ROUTING_HBF_FALLBACK = "HBF Fallback Detected"
+
+    # port health
+    IBH_PORT_ICRC_ERROR = "ICRC Error"
+    IBH_PORT_PARITY_ERROR = "Parity Error"
+    IBH_PORT_UNHEALTHY = "Port Unhealthy"
+
+    # links
+    IBH_LINK_ASYMMETRIC = "Asymmetric Link"
+
+    # temperature / power
+    IBH_TEMP_CRITICAL = "Temperature Critical"
+    IBH_TEMP_WARNING = "Temperature Warning"
+    IBH_PSU_CRITICAL = "PSU Critical"
+    IBH_PSU_WARNING = "PSU Warning"
+
+    # MLNX counters / performance
+    IBH_MLNX_COUNTER_CRITICAL = "MLNX Counter Critical"
+    IBH_MLNX_COUNTER_WARNING = "MLNX Counter Warning"
+    IBH_FEC_UNCORRECTABLE = "FEC Uncorrectable Blocks"
+    IBH_RELAY_ERROR = "Switch Relay Error"
+
     def __str__(self) -> str:
         return f"{IBH_ANOMALY_AGG_COL} {self.value}"

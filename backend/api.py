@@ -70,11 +70,57 @@ def validate_file_type(filename: str, allowed_extensions: set) -> None:
         )
 
 
+def validate_file_content(file_path: Path) -> None:
+    """Validate file content using magic bytes."""
+    try:
+        with open(file_path, 'rb') as f:
+            magic_bytes = f.read(8)
+
+        # Check for common archive formats
+        if file_path.suffix == '.zip' or file_path.name.endswith('.zip'):
+            # ZIP magic bytes: PK\x03\x04 or PK\x05\x06 or PK\x07\x08
+            if not (magic_bytes[:2] == b'PK' and magic_bytes[2] in [0x03, 0x05, 0x07]):
+                raise HTTPException(
+                    status_code=400,
+                    detail="File content does not match ZIP format"
+                )
+        elif file_path.suffix in {'.gz', '.tgz'} or file_path.name.endswith('.tar.gz'):
+            # GZIP magic bytes: 0x1f 0x8b
+            if magic_bytes[:2] != b'\x1f\x8b':
+                raise HTTPException(
+                    status_code=400,
+                    detail="File content does not match GZIP format"
+                )
+        elif file_path.suffix == '.csv':
+            # CSV should be text-based, check for binary content
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    f.read(1024)  # Try to read as text
+            except UnicodeDecodeError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="CSV file contains invalid text encoding"
+                )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"File content validation failed: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail="File content validation failed"
+        )
+
+
 def validate_path_safety(base_path: Path, target_path: Path) -> None:
     """Ensure target_path is within base_path (prevent path traversal)."""
     try:
         base_resolved = base_path.resolve()
-        target_resolved = target_path.resolve()
+        # For non-existent paths on Windows, use parent resolution
+        try:
+            target_resolved = target_path.resolve()
+        except (OSError, RuntimeError):
+            # If resolve fails, manually construct the path
+            target_resolved = base_resolved / target_path.relative_to(base_path)
 
         # Check if target is within base
         target_resolved.relative_to(base_resolved)
@@ -130,7 +176,7 @@ def safe_extract_archive(file_path: Path, extract_dir: Path) -> None:
             zip_ref.extractall(extract_dir)
             logger.info(f"Extracted ZIP: {len(zip_ref.namelist())} files")
 
-    elif file_path.suffix in {'.gz', '.tgz'} or file_path.name.endswith('.tar.gz'):
+    elif file_path.suffix in {'.gz', '.tgz'} or str(file_path.name).endswith('.tar.gz'):
         with tarfile.open(file_path, 'r:gz') as tar_ref:
             # Validate all paths before extraction
             for member in tar_ref.getmembers():
@@ -184,6 +230,9 @@ async def upload_ibdiagnet(file: UploadFile = File(...)):
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
+        # Validate file content (magic bytes check)
+        validate_file_content(file_path)
+
         # Extract archive with security validation
         safe_extract_archive(file_path, extract_dir)
 
@@ -226,10 +275,15 @@ async def upload_ibdiagnet(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
     finally:
         # Clean up uploaded archive (keep extracted data and results)
+        # Add delay to ensure file handles are released
         if file_path.exists():
             try:
+                import time
+                time.sleep(0.1)  # Brief delay for file handle release
                 file_path.unlink()
                 logger.info(f"Cleaned up uploaded archive: {file_path.name}")
+            except PermissionError:
+                logger.warning(f"File still in use, will be cleaned up later: {file_path.name}")
             except Exception as e:
                 logger.warning(f"Failed to cleanup archive: {e}")
 
@@ -263,16 +317,44 @@ async def upload_ufm_csv(file: UploadFile = File(...)):
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
+        # Validate file content
+        validate_file_content(file_path)
+
         # Read CSV in chunks to handle large files efficiently
         chunk_size = 10000
         chunks = []
         total_rows = 0
 
         logger.info(f"Reading CSV file in chunks...")
-        for chunk in pd.read_csv(file_path, chunksize=chunk_size):
-            total_rows += len(chunk)
-            if len(chunks) == 0:  # Only keep first chunk for preview
-                chunks.append(chunk)
+        csv_reader = None
+        try:
+            csv_reader = pd.read_csv(file_path, chunksize=chunk_size)
+            for chunk in csv_reader:
+                # Validate chunk has data
+                if chunk.empty:
+                    continue
+                # Basic validation: check for reasonable column count
+                if len(chunk.columns) > 1000:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="CSV has too many columns (max 1000)"
+                    )
+                total_rows += len(chunk)
+                if len(chunks) == 0:  # Only keep first chunk for preview
+                    chunks.append(chunk)
+                # Limit total rows processed to prevent memory issues
+                if total_rows > 1000000:  # 1M row limit
+                    logger.warning(f"CSV exceeds 1M rows, truncating at {total_rows}")
+                    break
+        except pd.errors.ParserError as e:
+            raise HTTPException(status_code=400, detail=f"CSV parsing error: {str(e)}")
+        finally:
+            # Ensure CSV reader is properly closed
+            if csv_reader is not None:
+                try:
+                    csv_reader.close()
+                except:
+                    pass
 
         if not chunks:
             raise HTTPException(status_code=400, detail="CSV file is empty")
@@ -306,7 +388,11 @@ async def upload_ufm_csv(file: UploadFile = File(...)):
         # Clean up uploaded file after processing
         if file_path.exists():
             try:
+                import time
+                time.sleep(0.1)  # Brief delay for file handle release
                 file_path.unlink()
                 logger.info(f"Cleaned up CSV file: {file_path.name}")
+            except PermissionError:
+                logger.warning(f"CSV file still in use, will be cleaned up later: {file_path.name}")
             except Exception as e:
                 logger.warning(f"Failed to cleanup CSV: {e}")

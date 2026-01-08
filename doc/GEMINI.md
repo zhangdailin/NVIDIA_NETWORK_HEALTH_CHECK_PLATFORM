@@ -47,4 +47,6 @@ docker-compose up -d
 
 **Analysis Service** (`backend/services/analysis_service.py`): The core analysis logic, which processes the uploaded data and generates a health score and detailed analysis.
 
+**Log Analysis Service** (`backend/services/log_analysis_service.py`): Parses `ibdiagnet2.log` to extract critical errors, warnings, and routing validation results (e.g., credit loops), implementing the "Routing Validation" capability.
+
 **File Storage**: Uploads stored in `uploads/` with UUID-based task directories. Generated HTML topology maps served as static files.
