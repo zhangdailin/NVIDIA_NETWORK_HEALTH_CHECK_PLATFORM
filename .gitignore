@@ -58,3 +58,4 @@ htmlcov/
 *.tmp
 *.temp
 *.bak
+node_modules

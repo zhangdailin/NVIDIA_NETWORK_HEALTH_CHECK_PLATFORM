@@ -2,10 +2,12 @@ from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from api import router
+from api import router, executor
+from middleware import RateLimitMiddleware, RequestIDMiddleware
 import os
 from datetime import datetime
 from pathlib import Path
+import atexit
 
 app = FastAPI(
     title="NVIDIA Network Health Check Platform",
@@ -43,15 +45,28 @@ A comprehensive API for analyzing InfiniBand network diagnostics from IBDiagnet 
 
 # CORS - configurable via environment variable
 cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:8000,http://localhost:3000")
-origins = [origin.strip() for origin in cors_origins.split(",")]
+origins = []
+for origin in cors_origins.split(","):
+    origin = origin.strip()
+    # Validate origin format
+    if origin.startswith(("http://", "https://")):
+        origins.append(origin)
+    else:
+        print(f"Warning: Invalid CORS origin format: {origin}")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],  # Restrict to needed methods
+    allow_headers=["Content-Type", "Authorization"],  # Restrict headers
 )
+
+# Add rate limiting middleware (10 requests per minute per IP)
+app.add_middleware(RateLimitMiddleware, requests_per_minute=10)
+
+# Add request ID middleware for tracing
+app.add_middleware(RequestIDMiddleware)
 
 # Ensure directories exist
 os.makedirs("uploads", exist_ok=True)
@@ -65,6 +80,22 @@ app.include_router(router, prefix="/api")
 
 # Store startup time for health check
 _startup_time = datetime.now()
+
+# Register cleanup handler for ThreadPoolExecutor
+def cleanup_resources():
+    """Cleanup resources on application shutdown."""
+    try:
+        executor.shutdown(wait=True, cancel_futures=False)
+        print("ThreadPoolExecutor shutdown successfully")
+    except Exception as e:
+        print(f"Error during cleanup: {e}")
+
+atexit.register(cleanup_resources)
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """FastAPI shutdown event handler."""
+    cleanup_resources()
 
 # Frontend static files path (for production build)
 FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"

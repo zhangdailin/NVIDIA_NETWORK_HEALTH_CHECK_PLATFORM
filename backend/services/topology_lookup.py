@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 from functools import lru_cache
 from pathlib import Path
@@ -10,6 +11,8 @@ from typing import Dict, Optional, Tuple
 import pandas as pd
 
 from .ibdiagnet import read_index_table, read_table
+
+logger = logging.getLogger(__name__)
 
 
 class TopologyLookup:
@@ -147,21 +150,39 @@ class TopologyLookup:
 
     @staticmethod
     def _normalize_guid(value: object) -> Optional[str]:
+        """Normalize GUID format with validation."""
         if value is None:
             return None
         text = str(value).strip()
         if not text or text.lower() == "na":
             return None
+
+        # Validate GUID format (hex string with optional 0x prefix)
+        import re
         if text.lower().startswith("0x"):
-            try:
-                return hex(int(text, 16))
-            except ValueError:
-                return text.lower()
+            hex_part = text[2:]
+            prefix = True
+        else:
+            hex_part = text
+            prefix = False
+
+        # Validate hex format
+        if not re.match(r'^[0-9a-f]+$', hex_part.lower()):
+            logger.warning(f"Invalid GUID format: {text}")
+            return text.lower()
+
+        # Validate length (typical GUID is 16 hex digits, max 32)
+        if len(hex_part) > 32:
+            logger.warning(f"GUID too long: {text}")
+            return text.lower()
+
         try:
-            if text.isdigit():
+            if prefix:
+                return hex(int(text, 16))
+            elif text.isdigit():
                 return hex(int(text))
-        except ValueError:
-            pass
+        except (ValueError, OverflowError):
+            logger.warning(f"Failed to normalize GUID: {text}")
         return text.lower()
 
     @staticmethod

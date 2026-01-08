@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
@@ -72,6 +73,23 @@ ANOMALY_CATEGORIES = {
     AnomlyType.IBH_LINK_DOWNSHIFT: ("topology", Severity.WARNING),
     AnomlyType.IBH_CREDIT_WATCHDOG: ("congestion", Severity.CRITICAL),
     AnomlyType.IBH_FAN_FAILURE: ("errors", Severity.WARNING),
+    # New anomaly types for routing, port health, links, temperature, power
+    AnomlyType.IBH_ROUTING_RN_ERROR: ("congestion", Severity.WARNING),
+    AnomlyType.IBH_ROUTING_FR_ERROR: ("errors", Severity.CRITICAL),
+    AnomlyType.IBH_ROUTING_HBF_FALLBACK: ("congestion", Severity.WARNING),
+    AnomlyType.IBH_PORT_ICRC_ERROR: ("errors", Severity.WARNING),
+    AnomlyType.IBH_PORT_PARITY_ERROR: ("errors", Severity.CRITICAL),
+    AnomlyType.IBH_PORT_UNHEALTHY: ("errors", Severity.CRITICAL),
+    AnomlyType.IBH_LINK_ASYMMETRIC: ("topology", Severity.WARNING),
+    AnomlyType.IBH_TEMP_CRITICAL: ("errors", Severity.CRITICAL),
+    AnomlyType.IBH_TEMP_WARNING: ("errors", Severity.WARNING),
+    AnomlyType.IBH_PSU_CRITICAL: ("errors", Severity.CRITICAL),
+    AnomlyType.IBH_PSU_WARNING: ("errors", Severity.WARNING),
+    # MLNX counters / performance
+    AnomlyType.IBH_MLNX_COUNTER_CRITICAL: ("errors", Severity.CRITICAL),
+    AnomlyType.IBH_MLNX_COUNTER_WARNING: ("errors", Severity.WARNING),
+    AnomlyType.IBH_FEC_UNCORRECTABLE: ("ber", Severity.CRITICAL),
+    AnomlyType.IBH_RELAY_ERROR: ("errors", Severity.WARNING),
 }
 
 CATEGORY_WEIGHTS = {
@@ -162,9 +180,16 @@ def calculate_health_score(
     for category, weight in CATEGORY_WEIGHTS.items():
         max_deduction = weight * 2
         deduction = min(deductions[category], max_deduction)
-        category_scores[category] = max(0, int(100 - (deduction / max_deduction) * 100))
+        score_value = max(0, int(100 - (deduction / max_deduction) * 100))
+        # Validate score is not NaN
+        if not isinstance(score_value, (int, float)) or math.isnan(score_value) or math.isinf(score_value):
+            score_value = 0
+        category_scores[category] = score_value
 
     total_score = sum((category_scores[cat] * wt) / 100 for cat, wt in CATEGORY_WEIGHTS.items())
+    # Validate total score is not NaN
+    if math.isnan(total_score) or math.isinf(total_score):
+        total_score = 0
     score = max(0, min(100, int(total_score)))
     grade, status = _get_grade_and_status(score)
     summary = {
