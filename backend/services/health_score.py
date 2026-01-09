@@ -302,7 +302,7 @@ def _check_specific_issues(row: Dict, source: str, issues: List[Issue], deductio
                 description = f"Port phy state {port_phy}"
             issue = Issue(
                 severity=Severity.WARNING,
-                category="topology",
+                category="errors",
                 description=description,
                 node_guid=node_guid,
                 port_number=port_number,
@@ -317,7 +317,7 @@ def _check_specific_issues(row: Dict, source: str, issues: List[Issue], deductio
             )
             _attach_issue_guide(issue, custom_key=ExplanationKey.PORT_INACTIVE)
             issues.append(issue)
-        deductions["topology"] += SEVERITY_MULTIPLIERS[Severity.WARNING]
+        deductions["errors"] += SEVERITY_MULTIPLIERS[Severity.WARNING]
 
 
 def _to_float(value: Any) -> float:
