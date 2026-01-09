@@ -52,6 +52,16 @@ const pickFormattedBer = (directCandidates = [], numericCandidates = [], logCand
   return 'N/A'
 }
 
+const toInteger = (value) => {
+  const num = Number(value)
+  return Number.isFinite(num) ? num : 0
+}
+
+const formatCount = (value) => {
+  const count = toInteger(value)
+  return count.toLocaleString('en-US')
+}
+
 const extractSymbolBer = (row) => {
   return pickFormattedBer(
     [row['Symbol BER'], row.SymbolBER, row.symbolBer],
@@ -84,11 +94,14 @@ const mergeRows = (berData, berAdvancedData) => {
 
 const buildDisplayRows = (rows) => rows.map((row, index) => {
   const severity = String(row.SymbolBERSeverity || row.Severity || '').toLowerCase()
-  const fallbackAnomaly = ['critical', 'warning'].includes(severity) ? 'High Symbol BER' : ''
+  const hasSymbolErrors = toInteger(row['Symbol Err'] ?? row.SymbolErr ?? row.symbolErr) > 0
+  const fallbackAnomaly = ['critical', 'warning'].includes(severity) && hasSymbolErrors ? 'High Symbol BER' : ''
 
   return {
     id: `${row.NodeGUID || row['Node GUID'] || index}-${row.PortNumber || row['Port Number'] || ''}`,
     nodeGuid: normalizeValue(row.NodeGUID || row['Node GUID'], 'N/A'),
+    lid: normalizeValue(row.LID || row['LID'], 'N/A'),
+    peerLid: normalizeValue(row['Peer LID'] || row.PeerLID || row.ConnLID || row['Conn LID (#)'], 'N/A'),
     portNumber: normalizeValue(row.PortNumber || row['Port Number'], 'N/A'),
     nodeName: normalizeValue(row['Node Name'] || row.NodeName, 'N/A'),
     attachedTo: normalizeValue(row['Attached To'] || row.AttachedTo, 'N/A'),
@@ -108,6 +121,9 @@ const buildDisplayRows = (rows) => rows.map((row, index) => {
       [row.SymbolBERLog10Value, row['Log10 Symbol BER']]
     ),
     ibhAnomaly: normalizeValue(row['IBH Anomaly'] || row.IBHAnomaly || fallbackAnomaly, ''),
+    symbolErr: formatCount(row['Symbol Err'] ?? row.SymbolErr),
+    effectiveErr: formatCount(row['Effective Err'] ?? row.EffectiveErr),
+    hasSymbolErrors,
   }
 })
 
@@ -121,7 +137,10 @@ function BERAnalysis({ berData = [], berAdvancedData = [], showOnlyProblematic =
     return buildDisplayRows(merged)
   }, [berData, berAdvancedData])
 
-  const problemRows = useMemo(() => displayRows.filter(row => !!row.ibhAnomaly), [displayRows])
+  const problemRows = useMemo(
+    () => displayRows.filter(row => row.hasSymbolErrors && !!row.ibhAnomaly),
+    [displayRows]
+  )
 
   if (displayRows.length === 0) {
     return (
@@ -199,6 +218,8 @@ function BERAnalysis({ berData = [], berAdvancedData = [], showOnlyProblematic =
           <thead>
             <tr style={{ background: '#f3f4f6', borderBottom: '2px solid #e5e7eb' }}>
               <th style={{ textAlign: 'left', padding: '10px' }}>Node GUID</th>
+              <th style={{ textAlign: 'left', padding: '10px' }}>LID</th>
+              <th style={{ textAlign: 'left', padding: '10px' }}>Peer LID</th>
               <th style={{ textAlign: 'left', padding: '10px' }}>Port Number</th>
               <th style={{ textAlign: 'left', padding: '10px' }}>Node Name</th>
               <th style={{ textAlign: 'left', padding: '10px' }}>Attached To</th>
@@ -206,19 +227,27 @@ function BERAnalysis({ berData = [], berAdvancedData = [], showOnlyProblematic =
               <th style={{ textAlign: 'left', padding: '10px' }}>Effective BER</th>
               <th style={{ textAlign: 'left', padding: '10px' }}>Symbol BER</th>
               <th style={{ textAlign: 'left', padding: '10px' }}>IBH Anomaly</th>
+              <th style={{ textAlign: 'left', padding: '10px' }}>Symbol Err</th>
+              <th style={{ textAlign: 'left', padding: '10px' }}>Effective Err</th>
             </tr>
           </thead>
           <tbody>
             {pageRows.map((row) => (
               <tr key={row.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
                 <td style={{ padding: '10px', fontFamily: 'monospace' }}>{row.nodeGuid}</td>
+                <td style={{ padding: '10px', fontFamily: 'monospace' }}>{row.lid}</td>
+                <td style={{ padding: '10px', fontFamily: 'monospace' }}>{row.peerLid}</td>
                 <td style={{ padding: '10px' }}>{row.portNumber}</td>
                 <td style={{ padding: '10px' }}>{row.nodeName}</td>
                 <td style={{ padding: '10px' }}>{row.attachedTo}</td>
                 <td style={{ padding: '10px', fontFamily: 'monospace' }}>{row.rawBer}</td>
                 <td style={{ padding: '10px', fontFamily: 'monospace' }}>{row.effectiveBer}</td>
                 <td style={{ padding: '10px', fontFamily: 'monospace' }}>{row.symbolBer}</td>
-                <td style={{ padding: '10px', color: row.ibhAnomaly ? '#dc2626' : '#4b5563' }}>{row.ibhAnomaly || '—'}</td>
+                <td style={{ padding: '10px', color: row.ibhAnomaly ? '#dc2626' : '#4b5563' }}>
+                  {row.ibhAnomaly && row.hasSymbolErrors ? row.ibhAnomaly : '—'}
+                </td>
+                <td style={{ padding: '10px', fontFamily: 'monospace' }}>{row.symbolErr}</td>
+                <td style={{ padding: '10px', fontFamily: 'monospace' }}>{row.effectiveErr}</td>
               </tr>
             ))}
           </tbody>

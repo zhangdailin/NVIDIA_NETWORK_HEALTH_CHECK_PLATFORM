@@ -38,12 +38,16 @@ class BerService:
 
     DISPLAY_COLUMNS = [
         "NodeGUID",
+        "LID",
+        "Peer LID",
         "PortNumber",
         "Node Name",
         "Attached To",
         "Raw BER",
         "Effective BER",
         "Symbol BER",
+        "Symbol Err",
+        "Effective Err",
         "IBH Anomaly",
         "EventName",
         "Summary",
@@ -377,17 +381,21 @@ class BerService:
                             continue
                         node_guid = self._normalize_guid_text(parts[3])
                         node_name = parts[17].strip('"') if len(parts) > 17 else parts[3]
+                        lid_value = self._extract_numeric_token(parts[4])
+                        peer_lid_value = self._extract_numeric_token(parts[9])
                         records.append(
                             {
                                 "NodeGUID": node_guid,
                                 "PortNumber": port_number,
                                 "Node Name": node_name,
                                 "Attached To": parts[9],
+                                "LID": lid_value,
+                                "Peer LID": peer_lid_value,
                                 "Raw BER": raw,
                                 "Effective BER": eff,
                                 "Symbol BER": sym,
-                                "Symbol Err": sym_err,
-                                "Effective Err": eff_err,
+                                "Symbol Err": self._parse_int_token(sym_err),
+                                "Effective Err": self._parse_int_token(eff_err),
                             }
                         )
             except OSError:
@@ -499,6 +507,9 @@ class BerService:
             if column not in merged.columns:
                 merged[column] = 0
             merged[column] = pd.to_numeric(merged[column], errors="coerce").fillna(0).astype(int)
+        for column in ("LID", "Peer LID"):
+            if column not in merged.columns:
+                merged[column] = None
         return merged
 
     def _ensure_numeric_ber_columns(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -524,6 +535,28 @@ class BerService:
             mask = df["SymbolBERLog10Value"].isna()
             df.loc[mask, "SymbolBERLog10Value"] = df.loc[mask, "Log10 Symbol BER"]
         return df
+
+    @staticmethod
+    def _extract_numeric_token(value: object) -> Optional[str]:
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        token = text.split()[0]
+        return token or None
+
+    @staticmethod
+    def _parse_int_token(value: object) -> int:
+        token = BerService._extract_numeric_token(value)
+        if token is None:
+            return 0
+        try:
+            if token.lower().startswith("0x"):
+                return int(token, 16)
+            return int(float(token))
+        except (ValueError, TypeError):
+            return 0
 
     @staticmethod
     def _normalize_guid_text(value: str) -> str:
