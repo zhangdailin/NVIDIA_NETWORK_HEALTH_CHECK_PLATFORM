@@ -1900,7 +1900,6 @@ function App() {
                 berAdvancedData={ber_advanced_data}
                 perLaneData={per_lane_performance_data}
                 berAdvancedSummary={ber_advanced_summary}
-                showOnlyProblematic
               />
             </div>
           </div>
