@@ -1,7 +1,6 @@
 import { Activity, AlertTriangle, ArrowRightLeft, RefreshCw, Shield } from 'lucide-react'
 import DataTable from './DataTable'
-
-const ensureArray = (value) => (Array.isArray(value) ? value : [])
+import { ensureArray, toFiniteNumber } from './analysisUtils'
 
 const formatCount = (value) => {
   const num = Number(value)
@@ -10,11 +9,6 @@ const formatCount = (value) => {
     return num.toLocaleString('en-US', { maximumFractionDigits: 1 })
   }
   return num.toLocaleString('en-US', { maximumFractionDigits: num % 1 === 0 ? 0 : 2 })
-}
-
-const toFiniteNumber = (value) => {
-  const num = Number(value)
-  return Number.isFinite(num) ? num : null
 }
 
 const resolveLinkDownCount = (row, suffix) => {

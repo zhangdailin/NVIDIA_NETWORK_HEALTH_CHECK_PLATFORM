@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
+import { ensureArray } from './analysisUtils'
 
-const ensureArray = (value) => (Array.isArray(value) ? value : [])
 const DEFAULT_PAGE_SIZE = 100
 
 const normalizeSearchValue = (value) => {

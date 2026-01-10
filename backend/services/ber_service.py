@@ -89,7 +89,11 @@ class BerService:
 
         records: List[dict] = []
         if frames:
-            combined = pd.concat(frames, ignore_index=True, sort=False)
+            # Filter out empty or all-NA dataframes to avoid FutureWarning
+            non_empty_frames = [f for f in frames if not f.empty and not f.isna().all().all()]
+            if not non_empty_frames:
+                return []
+            combined = pd.concat(non_empty_frames, ignore_index=True, sort=False)
             combined = self._topology_lookup().annotate_ports(combined, guid_col="NodeGUID", port_col="PortNumber")
 
             severity_col = combined.get("SymbolBERSeverity")

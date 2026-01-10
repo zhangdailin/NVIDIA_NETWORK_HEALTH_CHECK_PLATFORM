@@ -1,15 +1,32 @@
 :root {
-  --primary: #76b900; /* NVIDIA Green */
-  --primary-dark: #5e9300;
-  --bg-light: #f8f9fa;
-  --border-color: #e2e8f0;
-  --text-primary: #1a202c;
-  --text-secondary: #4a5568;
+  /* NVIDIA Brand Colors */
+  --primary: #76b900;
+  --primary-dark: #5a8c00;
+  --primary-light: #8ed100;
+
+  /* Dark Theme Colors */
+  --bg-primary: #0a0a0a;
+  --bg-secondary: #111111;
+  --bg-tertiary: #1a1a1a;
+  --bg-card: #141414;
+  --border-color: #2a2a2a;
+  --border-light: #333333;
+
+  /* Text Colors */
+  --text-primary: #ffffff;
+  --text-secondary: #a0a0a0;
+  --text-muted: #666666;
+
+  /* Status Colors */
+  --status-success: #22c55e;
+  --status-warning: #f59e0b;
+  --status-error: #ef4444;
+  --status-info: #3b82f6;
 }
 
 body {
   margin: 0;
-  background-color: var(--bg-light);
+  background-color: var(--bg-primary);
 }
 
 .container {
@@ -24,13 +41,13 @@ body {
 }
 
 .header {
-  background: white;
+  background: var(--bg-card);
   padding: 0 2rem;
   height: 60px;
   border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
   flex-shrink: 0;
 }
 
@@ -53,7 +70,7 @@ body {
 
 .sidebar {
   width: 300px;
-  background: white;
+  background: var(--bg-secondary);
   border-right: 1px solid var(--border-color);
   padding: 1.5rem;
   display: flex;
@@ -64,7 +81,7 @@ body {
 }
 
 .upload-card {
-  background: white;
+  background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 1.5rem;
@@ -73,7 +90,7 @@ body {
 
 .upload-card:hover {
   border-color: var(--primary);
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 0 20px rgba(118, 185, 0, 0.15);
 }
 
 .upload-card h3 {
@@ -103,20 +120,25 @@ body {
   padding: 8px;
   border: 1px solid var(--border-color);
   border-radius: 4px;
-  background: var(--bg-light);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
   cursor: pointer;
+}
+
+.file-input-wrapper input[type=file]:hover {
+  border-color: var(--primary);
 }
 
 .content {
   flex: 1;
   display: grid;
   grid-template-columns: 320px minmax(0, 1fr);
-  background: #f8fafc;
+  background: var(--bg-primary);
   min-height: 0;
 }
 
 .tab-panel {
-  background: white;
+  background: var(--bg-secondary);
   border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
@@ -164,7 +186,7 @@ body {
 
 .tabs {
   display: flex;
-  background: white;
+  background: var(--bg-card);
   border-bottom: 1px solid var(--border-color);
   padding: 0 1.5rem;
   flex-shrink: 0;
@@ -188,7 +210,7 @@ body {
 
 .tab:hover {
   color: var(--primary);
-  background: #f8fafc;
+  background: var(--bg-tertiary);
 }
 
 .tab.active {
@@ -214,14 +236,15 @@ body {
   border-radius: 8px;
   height: auto;
   padding: 0.5rem 1rem;
-  background: #f8fafc;
+  background: var(--bg-tertiary);
   width: fit-content;
 }
 
 .tabs.grouped-tabs .overview-tab.active {
   border-color: var(--primary);
-  background: rgba(118, 185, 0, 0.08);
+  background: rgba(118, 185, 0, 0.15);
   color: var(--primary);
+  box-shadow: 0 0 10px rgba(118, 185, 0, 0.2);
 }
 
 .tabs.grouped-tabs .tab {
@@ -230,17 +253,19 @@ body {
   border-radius: 8px;
   height: auto;
   padding: 0.5rem 1rem;
-  background: #f8fafc;
+  background: var(--bg-tertiary);
 }
 
 .tabs.grouped-tabs .tab:hover {
-  background: #fff;
+  background: var(--bg-card);
+  border-color: var(--border-light);
 }
 
 .tabs.grouped-tabs .tab.active {
   border-color: var(--primary);
-  background: rgba(118, 185, 0, 0.08);
+  background: rgba(118, 185, 0, 0.15);
   color: var(--primary);
+  box-shadow: 0 0 10px rgba(118, 185, 0, 0.2);
 }
 
 .tab-group {
@@ -275,7 +300,7 @@ body {
 }
 
 .tab-group-toggle:hover {
-  background: rgba(15, 23, 42, 0.08);
+  background: rgba(118, 185, 0, 0.1);
 }
 
 .tab-group-tabs {
@@ -289,12 +314,14 @@ body {
   min-height: 0;
   overflow: auto;
   padding: 2rem;
+  background: var(--bg-primary);
 }
 
 .card {
-  background: white;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
   border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
   padding: 1.5rem;
   margin-bottom: 1.5rem;
   height: fit-content;
@@ -323,7 +350,7 @@ body {
   padding: 0.75rem 1rem;
   border: 1px solid var(--border-color);
   border-radius: 10px;
-  background: #f8fafc;
+  background: var(--bg-tertiary);
 }
 
 .health-board-toolbar .toolbar-left,
@@ -339,12 +366,14 @@ body {
   border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 6px 10px;
-  background: white;
+  background: var(--bg-card);
+  color: var(--text-primary);
 }
 
 .health-board-toolbar button {
   border: 1px solid var(--border-color);
-  background: white;
+  background: var(--bg-card);
+  color: var(--text-primary);
   border-radius: 6px;
   padding: 6px 14px;
   cursor: pointer;
@@ -355,14 +384,14 @@ body {
 .health-board-toolbar button.active {
   border-color: var(--primary);
   color: var(--primary);
-  background: rgba(118, 185, 0, 0.1);
+  background: rgba(118, 185, 0, 0.15);
 }
 
 .health-board-group {
   border: 1px solid var(--border-color);
   border-radius: 12px;
   padding: 1rem;
-  background: white;
+  background: var(--bg-secondary);
 }
 
 .health-board-group-header {
@@ -424,7 +453,7 @@ body {
   border: 1px solid var(--border-color);
   border-radius: 12px;
   padding: 1rem;
-  background: #f8fafc;
+  background: var(--bg-tertiary);
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -477,10 +506,23 @@ body {
   border-radius: 12px;
   padding: 0.75rem 1rem;
   min-width: 160px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
+  border: 2px solid transparent;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.osc-chip:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.osc-chip-selected {
+  border-color: currentColor;
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
 }
 
 .osc-chip-label {
@@ -502,7 +544,7 @@ body {
   border: 1px solid var(--border-color);
   border-radius: 12px;
   padding: 1rem;
-  background: #fff;
+  background: var(--bg-card);
 }
 
 .osc-top-path-header {
@@ -527,7 +569,7 @@ body {
 .osc-top-path-total {
   font-weight: 600;
   font-size: 0.95rem;
-  background: #f1f5f9;
+  background: var(--bg-tertiary);
   border-radius: 999px;
   padding: 0.35rem 0.9rem;
 }
@@ -546,7 +588,7 @@ body {
   border: 1px dashed var(--border-color);
   border-radius: 10px;
   padding: 0.85rem;
-  background: #f9fafb;
+  background: var(--bg-tertiary);
 }
 
 .osc-endpoint-name {
@@ -568,7 +610,7 @@ body {
   border: 1px solid var(--border-color);
   border-radius: 12px;
   padding: 1rem;
-  background: #fff;
+  background: var(--bg-card);
 }
 
 .osc-section-header {
@@ -594,7 +636,7 @@ body {
 .osc-section-tag {
   font-size: 0.85rem;
   color: var(--text-secondary);
-  background: #f8fafc;
+  background: var(--bg-tertiary);
   border-radius: 999px;
   padding: 0.25rem 0.85rem;
 }
@@ -603,7 +645,7 @@ body {
   border: 1px dashed var(--border-color);
   border-radius: 10px;
   padding: 1rem;
-  background: #f8fafc;
+  background: var(--bg-tertiary);
 }
 
 .osc-severity-dot {
@@ -630,7 +672,7 @@ body {
   overflow-x: auto;
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  background: #fff;
+  background: var(--bg-card);
 }
 
 .osc-table {
@@ -642,13 +684,14 @@ body {
 .osc-table th,
 .osc-table td {
   padding: 10px;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--border-color);
   text-align: left;
 }
 
 .osc-table thead th {
-  background: #e2f0cb;
+  background: rgba(118, 185, 0, 0.15);
   font-weight: 600;
+  color: var(--primary);
 }
 
 .osc-table tbody tr:last-child td {
@@ -668,7 +711,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  background: #fdfefe;
+  background: var(--bg-card);
 }
 
 .health-card-header {
@@ -732,7 +775,7 @@ body {
 .health-card-stat {
   display: flex;
   flex-direction: column;
-  background: #f8fafc;
+  background: var(--bg-tertiary);
   border-radius: 8px;
   padding: 8px;
 }
@@ -746,7 +789,7 @@ body {
 }
 
 .health-card-stat.muted {
-  background: #f8fafc;
+  background: var(--bg-tertiary);
 }
 
 .stat-label {
@@ -788,7 +831,7 @@ body {
   border: 1px solid var(--border-color);
   border-radius: 10px;
   padding: 1rem;
-  background: #f8fafc;
+  background: var(--bg-tertiary);
 }
 
 .warning-category-card.warning-critical {
@@ -844,21 +887,21 @@ th, td {
 }
 
 th {
-  background-color: #f8fafc;
+  background-color: var(--bg-tertiary);
   font-weight: 600;
   color: var(--text-secondary);
   white-space: nowrap;
 }
 
 tr:hover {
-  background-color: #f8fafc;
+  background-color: var(--bg-tertiary);
 }
 
 .iframe-container {
   width: 100%;
   height: 100%;
   border: none;
-  background: white;
+  background: var(--bg-card);
   border-radius: 0;
   display: flex;
 }
@@ -870,7 +913,7 @@ tr:hover {
   justify-content: center;
   height: 100%;
   color: var(--text-secondary);
-  background: white;
+  background: var(--bg-card);
   margin: 2rem;
   border-radius: 8px;
   border: 2px dashed var(--border-color);
@@ -882,13 +925,14 @@ tr:hover {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(255,255,255,0.8);
+  background: rgba(10, 10, 10, 0.9);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
   flex-direction: column;
   gap: 1rem;
+  backdrop-filter: blur(4px);
 }
 
 .spinner {
@@ -937,7 +981,7 @@ tr:hover {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: white;
+  background: var(--bg-card);
 }
 
 .health-score-value {
@@ -1067,7 +1111,7 @@ tr:hover {
 .issue-item {
   padding: 0.75rem;
   border-left: 3px solid;
-  background: #f8fafc;
+  background: var(--bg-tertiary);
   margin-bottom: 0.5rem;
   border-radius: 0 4px 4px 0;
 }
@@ -1112,7 +1156,7 @@ tr:hover {
 
 .issue-knowledge {
   margin-top: 0.75rem;
-  background: #fff;
+  background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 0.75rem;
@@ -1158,7 +1202,7 @@ tr:hover {
   border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 1rem;
-  background: #f8fafc;
+  background: var(--bg-tertiary);
 }
 
 .insight-card h4 {
@@ -1267,7 +1311,7 @@ tr:hover {
   border: 1px solid var(--border-color);
   border-radius: 10px;
   padding: 1rem;
-  background: white;
+  background: var(--bg-card);
   cursor: pointer;
   text-align: left;
   display: flex;
@@ -1374,7 +1418,7 @@ tr:hover {
   padding: 0.75rem;
   border-radius: 8px;
   border: 1px solid var(--border-color);
-  background: #f8fafc;
+  background: var(--bg-tertiary);
 }
 
 .overview-stat-label {
@@ -1404,7 +1448,7 @@ tr:hover {
   border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 0.75rem 0.9rem;
-  background: white;
+  background: var(--bg-card);
 }
 
 .overview-alert-metadata {
