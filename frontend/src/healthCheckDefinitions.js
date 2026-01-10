@@ -1,4 +1,4 @@
-const ensureArray = (value) => (Array.isArray(value) ? value : [])
+import { ensureArray } from './analysisUtils'
 
 const DEFAULT_ROW_SEVERITY_FIELDS = [
   'Severity',

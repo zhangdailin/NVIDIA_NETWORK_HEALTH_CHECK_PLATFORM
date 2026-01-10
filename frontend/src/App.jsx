@@ -1,19 +1,45 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import axios from 'axios'
 import { Upload, FileText, Activity, Server, AlertTriangle, ShieldCheck, Cpu, CheckCircle, XCircle, AlertCircle, Fan as FanIcon, Clock3, BookOpen, ChevronDown, ChevronUp, Thermometer, Zap, Network, GitBranch, Layers, Settings, Database, Cpu as ChipIcon, BarChart2, Key, Box, Info, PlugZap, Shuffle, BrainCircuit, Shield, Radio, Users, BarChart3, HardDrive, Router, ThermometerSun, Timer } from 'lucide-react'
-import {
-  ERROR_KNOWLEDGE_BASE,
-  getErrorExplanation,
-  identifyIssueType,
-  identifyAllIssues,
-  getSeverityInfo,
-  ISSUE_CATEGORIES
-} from './ErrorExplanations'
+import { getErrorExplanation } from './ErrorExplanations'
+import { ensureArray, toNumber } from './analysisUtils'
 import FaultSummary from './FaultSummary'
 import CableAnalysis from './CableAnalysis'
 import BERAnalysis from './BERAnalysis'
 import CongestionAnalysis from './CongestionAnalysis'
 import LinkOscillation from './LinkOscillation'
+import HcaAnalysis from './HcaAnalysis'
+import FanAnalysis from './FanAnalysis'
+import TemperatureAnalysis from './TemperatureAnalysis'
+import PowerAnalysis from './PowerAnalysis'
+import SwitchesAnalysis from './SwitchesAnalysis'
+import RoutingAnalysis from './RoutingAnalysis'
+import QosAnalysis from './QosAnalysis'
+import SmInfoAnalysis from './SmInfoAnalysis'
+import PortHierarchyAnalysis from './PortHierarchyAnalysis'
+import MlnxCountersAnalysis from './MlnxCountersAnalysis'
+import PmDeltaAnalysis from './PmDeltaAnalysis'
+import VportsAnalysis from './VportsAnalysis'
+import PkeyAnalysis from './PkeyAnalysis'
+import SystemInfoAnalysis from './SystemInfoAnalysis'
+import ExtendedPortInfoAnalysis from './ExtendedPortInfoAnalysis'
+import ArInfoAnalysis from './ArInfoAnalysis'
+import SharpAnalysis from './SharpAnalysis'
+import FecModeAnalysis from './FecModeAnalysis'
+import PhyDiagnosticsAnalysis from './PhyDiagnosticsAnalysis'
+import NeighborsAnalysis from './NeighborsAnalysis'
+import BufferHistogramAnalysis from './BufferHistogramAnalysis'
+import ExtendedNodeInfoAnalysis from './ExtendedNodeInfoAnalysis'
+import ExtendedSwitchInfoAnalysis from './ExtendedSwitchInfoAnalysis'
+import PowerSensorsAnalysis from './PowerSensorsAnalysis'
+import RoutingConfigAnalysis from './RoutingConfigAnalysis'
+import TempAlertsAnalysis from './TempAlertsAnalysis'
+import CreditWatchdogAnalysis from './CreditWatchdogAnalysis'
+import PciPerformanceAnalysis from './PciPerformanceAnalysis'
+import BerAdvancedAnalysis from './BerAdvancedAnalysis'
+import PerLanePerformanceAnalysis from './PerLanePerformanceAnalysis'
+import N2nSecurityAnalysis from './N2nSecurityAnalysis'
+import LatencyAnalysis from './LatencyAnalysis'
 import HealthCheckBoard from './HealthCheckBoard'
 import { HEALTH_CHECK_GROUPS, HEALTH_CHECK_DEFINITIONS } from './healthCheckDefinitions'
 import './App.css'
@@ -25,10 +51,8 @@ const rawBaseUrl = normalizeBaseUrl(import.meta.env.VITE_API_URL || '')
 const hasApiSuffix = rawBaseUrl.endsWith('/api')
 const apiRootUrl = hasApiSuffix ? rawBaseUrl.slice(0, -4) : rawBaseUrl
 const API_ENDPOINT_BASE = hasApiSuffix ? rawBaseUrl : (apiRootUrl ? `${apiRootUrl}/api` : '/api')
-const ASSET_BASE_URL = apiRootUrl || ''
 
 const buildApiUrl = (path = '') => `${API_ENDPOINT_BASE}${path}`
-const buildAssetUrl = (path = '') => `${ASSET_BASE_URL}${path}`
 
 const resolveMaxFileSize = () => {
   const fromEnv = Number(import.meta.env.VITE_MAX_FILE_SIZE)
@@ -39,33 +63,7 @@ const resolveMaxFileSize = () => {
 }
 
 const MAX_FILE_SIZE = resolveMaxFileSize()
-const MAX_TABLE_ROWS = 500
 const FILE_SIZE_MB = 500
-const FILE_SIZE_BYTES = FILE_SIZE_MB * 1024 * 1024
-
-const ensureArray = (value) => (Array.isArray(value) ? value : [])
-
-const toNumber = (value) => {
-  const num = Number(value)
-  return Number.isFinite(num) ? num : 0
-}
-
-const hasAlarmFlag = (value) => {
-  if (value === null || value === undefined) return false
-  const text = String(value).trim()
-  if (!text || text.toLowerCase() === 'n/a') return false
-  const token = text.split(/\s+/)[0]
-  if (!token) return false
-  try {
-    if (token.toLowerCase().startsWith('0x')) {
-      return parseInt(token, 16) !== 0
-    }
-    const parsed = Number(token)
-    return Number.isFinite(parsed) && parsed !== 0
-  } catch {
-    return false
-  }
-}
 
 const RECENT_REBOOT_THRESHOLD_HOURS = 1
 
@@ -187,45 +185,6 @@ const buildActionPlan = (issues = []) => {
   })
 
   return actions
-}
-
-const buildCongestionInsights = (rows = []) => {
-  const safeRows = ensureArray(rows)
-  return safeRows
-    .map(row => {
-      const ratio = toNumber(row.WaitRatioPct)
-      const waitSeconds = toNumber(row.WaitSeconds)
-      const level = row.CongestionLevel
-      const fecnCount = toNumber(row.FECNCount)
-      const becnCount = toNumber(row.BECNCount)
-      const congestionPct = toNumber(row.XmitCongestionPct)
-      const severity =
-        level === 'severe' || ratio >= 5 || congestionPct >= 5
-          ? 'critical'
-          : level === 'warning' || ratio >= 1 || congestionPct >= 1 || fecnCount > 0 || becnCount > 0
-            ? 'warning'
-            : 'info'
-      return {
-        title: `${row['Node Name'] || row.NodeName || row.NodeGUID || 'Unknown'} - Port ${row.PortNumber || row['Port Number'] || 'N/A'}`,
-        ratio,
-        waitSeconds,
-        congestionPct,
-        fecnCount,
-        becnCount,
-        severity,
-      }
-    })
-    .filter(item => item.ratio >= 1 || item.congestionPct >= 1 || item.fecnCount > 0 || item.becnCount > 0)
-    .sort((a, b) => (Math.max(b.ratio, b.congestionPct) - Math.max(a.ratio, a.congestionPct)))
-    .slice(0, 3)
-    .map(item => ({
-      ...item,
-      subtitle: `Wait ratio ${item.ratio.toFixed(1)}%${item.congestionPct ? `, XmitTimeCong ${item.congestionPct.toFixed(2)}%` : ''}`,
-      description: `Approx. ${item.waitSeconds.toFixed(2)}s of the sample window was spent waiting. FECN/BECN=${item.fecnCount}/${item.becnCount}. ${
-        item.ratio >= 5 || item.congestionPct >= 5 ? 'Severe' : 'Warning'
-      } congestion per ibdiagnet (Section 5.2); rebalance flows or add bandwidth.`,
-      reference: 'doc/ibdiagnet_health_check_guide.md:338-345',
-    }))
 }
 
 // 添加问题摘要组件 - 增强版，集成知识库
@@ -390,266 +349,7 @@ function ProblemSummary({ title, problems, totalChecked, dataType }) {
   )
 }
 
-const buildBerInsights = (rows = []) => {
-  const safeRows = ensureArray(rows)
-  return safeRows
-    .map(row => {
-      // Support multiple BER Log10 field names
-      const log10 = toNumber(row.SymbolBERLog10Value || row.EffectiveBERLog10 || row.RawBERLog10)
-      // Support both severity field names
-      const severity = row.SymbolBERSeverity || row.Severity || 'info'
-      return {
-        title: `${row['Node Name'] || row.NodeName || row.NodeGUID || 'Node'} - Port ${row.PortNumber || row['Port Number'] || 'N/A'}`,
-        log10,
-        severity,
-      }
-    })
-    .filter(item => Number.isFinite(item.log10) && (item.severity === 'critical' || item.severity === 'warning'))
-    .sort((a, b) => b.log10 - a.log10)
-    .slice(0, 3)
-    .map(item => ({
-      ...item,
-      subtitle: `Symbol BER ~ 10^${item.log10.toFixed(1)}`,
-      description: 'Symbol BER should stay at or below 1e-12. Inspect fiber cleanliness, optical power, and module temperature; replace optics if the value stays high.',
-      reference: 'doc/ibdiagnet_health_check_guide.md:155-177',
-    }))
-}
-
-const buildCableInsights = (rows = []) => {
-  const safeRows = ensureArray(rows)
-  return safeRows
-    .map(row => {
-      const temp = toNumber(row['Temperature (c)'] ?? row.Temperature)
-      const vendor = row.Vendor || row['Vendor Name'] || 'Optic'
-      const linkDown = toNumber(row.LinkDownedCounter ?? row.LinkDownedCounterExt)
-      const redFlagCounters = ['PortRcvErrors', 'PortXmitDiscards', 'PortRcvRemotePhysicalErrors']
-      const hasErrors = redFlagCounters.some(key => toNumber(row[key]) > 0)
-      const biasAlarm = hasAlarmFlag(row['TX Bias Alarm and Warning'])
-      const txPowerAlarm = hasAlarmFlag(row['TX Power Alarm and Warning'])
-      const rxPowerAlarm = hasAlarmFlag(row['RX Power Alarm and Warning'])
-      const voltageAlarm = hasAlarmFlag(row['Latched Voltage Alarm and Warning'])
-      const opticalIssues = []
-      if (biasAlarm) opticalIssues.push('TX bias current alarm')
-      if (txPowerAlarm) opticalIssues.push('TX optical power alarm')
-      if (rxPowerAlarm) opticalIssues.push('RX optical power alarm')
-      if (voltageAlarm) opticalIssues.push('Module supply voltage alarm')
-
-      const severity = temp >= 80 || linkDown > 0 || hasErrors || opticalIssues.length
-        ? 'critical'
-        : temp >= 70
-          ? 'warning'
-          : 'info'
-
-      return {
-        vendor,
-        title: `${vendor} - ${row['Node Name'] || row.NodeName || 'Port'} ${row.PortNumber || row['Port Number'] || 'N/A'}`,
-        temp,
-        linkDown,
-        hasErrors,
-        opticalIssues,
-        supplyVoltage: row['Supply Voltage Reporting'] ?? row.SupplyVoltageReporting ?? '',
-        severity,
-      }
-    })
-    .filter(item => item.temp >= 70 || item.linkDown > 0 || item.hasErrors || item.opticalIssues.length > 0)
-    .sort((a, b) => b.temp - a.temp)
-    .slice(0, 3)
-    .map(item => ({
-      ...item,
-      subtitle: item.temp
-        ? `Module temperature ${item.temp.toFixed(1)}C`
-        : item.opticalIssues.length
-          ? `${item.opticalIssues.join('; ')}`
-          : 'Optical issue detected',
-      description:
-        item.temp >= 80
-          ? 'Optic temperature is in the critical zone. Improve cooling and consider swapping the module.'
-          : item.temp >= 70
-            ? 'Optic temperature is trending high; clean airflow paths and monitor closely.'
-            : item.opticalIssues.length
-              ? `Active optical alarms: ${item.opticalIssues.join(', ')}${item.supplyVoltage ? ` (Supply ${item.supplyVoltage})` : ''}. Inspect the module immediately.`
-              : 'Error counters exceeded zero; inspect the cable/optic and clear counters before retesting.',
-      reference: 'doc/ibdiagnet_health_check_guide.md:170-233,320-357',
-      actions:
-        item.temp >= 70
-          ? ['Check rack airflow or blocked filters', 'Schedule optic replacement if temperature keeps rising']
-          : item.opticalIssues.length
-            ? ['Clean or replace the optic pair and verify power/bias return to spec', 'Inspect SM logs for optical alarms and reseat the module']
-            : ['Inspect cable seating and clean the connector', 'Reset counters and verify whether errors reappear'],
-    }))
-}
-
-const buildFanInsights = (rows = []) => {
-  const safeRows = ensureArray(rows)
-  return safeRows
-    .map(row => {
-      const node = row['Node Name'] || row.NodeName || row.NodeGUID || 'Chassis'
-      const sensor = row.SensorIndex ?? row.PortNumber ?? 'N/A'
-      const fanSpeed = toNumber(row.FanSpeed)
-      const minSpeed = toNumber(row.MinSpeed)
-      const maxSpeed = toNumber(row.MaxSpeed)
-      const deviation = toNumber(row.FanAlert)
-      const status = row.FanStatus || (deviation > 0 ? 'Alert' : 'OK')
-      const percentBelow = minSpeed > 0 && fanSpeed > 0 ? Math.max(0, minSpeed - fanSpeed) / Math.max(1, minSpeed) : 0
-      const severity =
-        status === 'Alert' && (percentBelow >= 0.5 || fanSpeed <= 0)
-          ? 'critical'
-          : status === 'Alert'
-            ? 'warning'
-            : 'info'
-      return {
-        node,
-        sensor,
-        fanSpeed,
-        minSpeed,
-        maxSpeed,
-        deviation,
-        status,
-        percentBelow,
-        severity,
-      }
-    })
-    .filter(item => item.status === 'Alert')
-    .sort((a, b) => (b.percentBelow - a.percentBelow) || (b.deviation - a.deviation))
-    .slice(0, 3)
-    .map(item => ({
-      title: `${item.node} - Fan ${item.sensor}`,
-      subtitle: `Measured ${item.fanSpeed ? `${item.fanSpeed.toFixed(0)} RPM` : 'unknown'} (Min ${item.minSpeed ? item.minSpeed.toFixed(0) : 'N/A'})`,
-      description: item.severity === 'critical'
-        ? 'Fan speed is far below the chassis minimum; check airflow paths and replace the fan module if alerts persist.'
-        : 'Fan speed dipped under the recommended minimum; inspect filters for dust and confirm the fan tray is operational.',
-      severity: item.severity,
-      reference: 'doc/ibdiagnet_manual_summary.md: Chassis fan alerts',
-      actions: [
-        'Inspect the switch fan tray and remove dust or blockages',
-        'Schedule replacement of the affected fan if the alert repeats after cleaning'
-      ],
-    }))
-}
-
-const buildLatencyInsights = (rows = []) => {
-  const safeRows = ensureArray(rows)
-  return safeRows
-    .map(row => {
-      const ratio = toNumber(row.RttP99OverMedian)
-      const upper = toNumber(row.RttUpperBucketRatio) * 100
-      return {
-        title: `${row['Node Name'] || row.NodeName || row.NodeGUID || 'Node'} - Port ${row.PortNumber || row['Port Number'] || 'N/A'}`,
-        median: toNumber(row.RttMedianUs),
-        p99: toNumber(row.RttP99Us),
-        ratio,
-        upper,
-      }
-    })
-    .filter(item => item.ratio >= 3 || item.upper >= 20)
-    .sort((a, b) => b.ratio - a.ratio)
-    .slice(0, 3)
-    .map(item => ({
-      ...item,
-      severity: item.ratio >= 5 || item.upper >= 30 ? 'critical' : 'warning',
-      subtitle: `Median ${item.median.toFixed(2)}µs | P99 ${item.p99.toFixed(2)}µs`,
-      description:
-        item.ratio >= 5
-          ? `P99 latency is ${item.ratio.toFixed(1)}x the median, indicating heavy tail RTT.`
-          : `Upper histogram buckets account for ${item.upper.toFixed(1)}% of samples.`,
-      reference: 'doc/ibdiagnet_manual_summary.md §2.3',
-      actions: [
-        'Inspect congested flows on this path and rebalance routes',
-        'Validate adaptive routing configuration and queue depths',
-      ],
-    }))
-}
-
-function InsightCard({ title, subtitle, description, actions = [], severity = 'info', reference }) {
-  return (
-    <div className={`insight-card ${severity}`}>
-      <h4>{title}</h4>
-      {subtitle && <p className="insight-card-subtitle">{subtitle}</p>}
-      {description && <p className="insight-card-text">{description}</p>}
-      {actions.length > 0 && (
-        <ul className="insight-card-list">
-          {actions.slice(0, 2).map((action, idx) => (
-            <li key={idx}>{action}</li>
-          ))}
-        </ul>
-      )}
-      {reference && <p className="insight-card-reference">Reference: {reference}</p>}
-    </div>
-  )
-}
-
 const resolveTabMeta = (key) => TAB_LOOKUP[key] || { label: key, icon: Activity }
-
-const summarizeCableHealth = (rows = []) => {
-  const safeRows = ensureArray(rows)
-  let critical = 0
-  let warning = 0
-
-  safeRows.forEach(row => {
-    const temp = toNumber(row['Temperature (c)'] ?? row.Temperature)
-    const hasOpticalAlarm = [
-      'TX Bias Alarm and Warning',
-      'TX Power Alarm and Warning',
-      'RX Power Alarm and Warning',
-      'Latched Voltage Alarm and Warning'
-    ].some(key => hasAlarmFlag(row[key]))
-    const complianceStatus = String(row.CableComplianceStatus || '').toLowerCase()
-    const speedStatus = String(row.CableSpeedStatus || '').toLowerCase()
-
-    const severity = temp >= 80 || hasOpticalAlarm
-      ? 'critical'
-      : temp >= 70 || (complianceStatus && complianceStatus !== 'ok') || (speedStatus && speedStatus !== 'ok')
-        ? 'warning'
-        : 'info'
-
-    if (severity === 'critical') critical++
-    else if (severity === 'warning') warning++
-  })
-
-  return {
-    total: safeRows.length,
-    critical,
-    warning,
-    healthy: Math.max(0, safeRows.length - critical - warning),
-    severity: critical > 0 ? 'critical' : warning > 0 ? 'warning' : 'info',
-  }
-}
-
-const summarizeCongestionHealth = (rows = []) => {
-  const safeRows = ensureArray(rows)
-  let critical = 0
-  let warning = 0
-
-  safeRows.forEach(row => {
-    const ratio = toNumber(row.WaitRatioPct)
-    const waitSeconds = toNumber(row.WaitSeconds)
-    const congestionPct = toNumber(row.XmitCongestionPct)
-    const level = String(row.CongestionLevel || '').toLowerCase()
-    const fecnCount = toNumber(row.FECNCount)
-    const becnCount = toNumber(row.BECNCount)
-
-    const isCritical = ratio >= 5 || congestionPct >= 5 || level === 'critical'
-    const isWarning =
-      isCritical ? false : (
-        ratio >= 1 ||
-        congestionPct >= 1 ||
-        waitSeconds > 0 ||
-        level === 'warning' ||
-        fecnCount > 0 ||
-        becnCount > 0
-      )
-
-    if (isCritical) critical++
-    else if (isWarning) warning++
-  })
-
-  return {
-    total: safeRows.length,
-    critical,
-    warning,
-    severity: critical > 0 ? 'critical' : warning > 0 ? 'warning' : 'info',
-  }
-}
 
 const combineBerRows = (berData = [], berAdvancedData = []) => {
   const allRows = [...ensureArray(berData).map(row => ({ ...row, source: 'basic' }))]
@@ -707,332 +407,6 @@ const summarizeBerHealth = (berData = [], berAdvancedData = []) => {
   }
 }
 
-const evaluateFirmwareHealth = (rows = [], firmwareWarnings = [], pciWarnings = []) => {
-  const safeRows = ensureArray(rows)
-  let outdatedFwCount = 0
-  let psidIssueCount = 0
-  const fwVersions = new Set()
-
-  safeRows.forEach(row => {
-    const fwCompliant = row.FW_Compliant
-    const psidCompliant = row.PSID_Compliant
-    const fwVersion = row.FW_Version || row.FirmwareVersion
-
-    if (fwVersion) fwVersions.add(fwVersion)
-
-    if (fwCompliant === false || fwCompliant === 'false' || fwCompliant === 'False') {
-      outdatedFwCount++
-    }
-    if (psidCompliant === false || psidCompliant === 'false' || psidCompliant === 'False') {
-      psidIssueCount++
-    }
-  })
-
-  const problems = []
-
-  if (outdatedFwCount > 0) {
-    problems.push({
-      severity: 'warning',
-      summary: `${outdatedFwCount} 个设备固件版本过旧，建议升级`,
-      kbType: 'HCA_FIRMWARE_OUTDATED'
-    })
-  }
-  if (psidIssueCount > 0) {
-    problems.push({
-      severity: 'warning',
-      summary: `${psidIssueCount} 个设备PSID不在支持列表中`,
-      kbType: 'HCA_PSID_UNSUPPORTED'
-    })
-  }
-  if (fwVersions.size > 3) {
-    problems.push({
-      severity: 'info',
-      summary: `检测到 ${fwVersions.size} 个不同的固件版本，建议统一`,
-      kbType: 'HCA_FIRMWARE_MIXED_VERSIONS'
-    })
-  }
-  if (firmwareWarnings.length > 0) {
-    problems.push({
-      severity: 'warning',
-      summary: `${firmwareWarnings.length} 个节点固件版本不一致 (来自ibdiagnet警告)`,
-      kbType: 'HCA_FIRMWARE_MIXED_VERSIONS'
-    })
-  }
-  if (pciWarnings.length > 0) {
-    problems.push({
-      severity: 'critical',
-      summary: `${pciWarnings.length} 个端口PCI速度降级 (如Gen4→Gen3)，影响性能`,
-      kbType: 'PCI_DEGRADATION'
-    })
-  }
-
-  return {
-    problems,
-    stats: {
-      total: safeRows.length,
-      outdatedFwCount,
-      psidIssueCount,
-      firmwareWarningCount: firmwareWarnings.length,
-      pciWarningCount: pciWarnings.length,
-      uniqueFwVersions: fwVersions.size,
-      severity: pciWarnings.length > 0 || outdatedFwCount > 0
-        ? 'critical'
-        : (psidIssueCount > 0 || fwVersions.size > 3 || firmwareWarnings.length > 0 ? 'warning' : 'info'),
-    }
-  }
-}
-
-const evaluateLatencyHealth = (rows = []) => {
-  const safeRows = ensureArray(rows)
-  let highP99Count = 0
-  let upperBucketCount = 0
-  let jitterCount = 0
-
-  safeRows.forEach(row => {
-    const p99OverMedian = toNumber(row.RttP99OverMedian)
-    const upperRatio = toNumber(row.RttUpperBucketRatio)
-    const minRtt = toNumber(row.RttMinUs)
-    const maxRtt = toNumber(row.RttMaxUs)
-
-    if (p99OverMedian >= 3) highP99Count++
-    if (upperRatio >= 0.1) upperBucketCount++
-    if (minRtt > 0 && maxRtt > minRtt * 10) jitterCount++
-  })
-
-  const problems = []
-  if (highP99Count > 0) {
-    problems.push({
-      severity: highP99Count > 5 ? 'critical' : 'warning',
-      summary: `${highP99Count} 个端口P99延迟异常偏高 (>3倍中位数)`,
-      kbType: 'HISTOGRAM_HIGH_LATENCY'
-    })
-  }
-  if (upperBucketCount > 0) {
-    problems.push({
-      severity: 'warning',
-      summary: `${upperBucketCount} 个端口高延迟桶占比过高 (>10%)`,
-      kbType: 'HISTOGRAM_UPPER_BUCKET'
-    })
-  }
-  if (jitterCount > 0) {
-    problems.push({
-      severity: 'warning',
-      summary: `${jitterCount} 个端口延迟抖动过大`,
-      kbType: 'HISTOGRAM_JITTER'
-    })
-  }
-
-  return {
-    problems,
-    stats: {
-      total: safeRows.length,
-      highP99Count,
-      upperBucketCount,
-      jitterCount,
-      severity: highP99Count > 0 ? 'critical' : (upperBucketCount > 0 || jitterCount > 0 ? 'warning' : 'info'),
-    }
-  }
-}
-
-const evaluateFanHealth = (rows = []) => {
-  const safeRows = ensureArray(rows)
-  let lowSpeedCount = 0
-  let highSpeedCount = 0
-  let alertCount = 0
-
-  safeRows.forEach(row => {
-    const fanSpeed = toNumber(row.FanSpeed)
-    const minSpeed = toNumber(row.MinSpeed)
-    const maxSpeed = toNumber(row.MaxSpeed)
-    const status = String(row.FanStatus || '').toLowerCase()
-
-    if (status === 'alert') alertCount++
-    if (minSpeed > 0 && fanSpeed < minSpeed) lowSpeedCount++
-    if (maxSpeed > 0 && fanSpeed > maxSpeed * 0.9) highSpeedCount++
-  })
-
-  const problems = []
-  if (lowSpeedCount > 0 || alertCount > 0) {
-    problems.push({
-      severity: 'critical',
-      summary: `${Math.max(lowSpeedCount, alertCount)} 个风扇转速过低或告警，可能导致设备过热`,
-      kbType: 'FAN_SPEED_LOW'
-    })
-  }
-  if (highSpeedCount > 0) {
-    problems.push({
-      severity: 'warning',
-      summary: `${highSpeedCount} 个风扇长时间高速运转，散热系统压力大`,
-      kbType: 'FAN_SPEED_HIGH'
-    })
-  }
-
-  return {
-    problems,
-    stats: {
-      total: safeRows.length,
-      lowSpeedCount,
-      highSpeedCount,
-      alertCount,
-      severity: lowSpeedCount > 0 || alertCount > 0 ? 'critical' : (highSpeedCount > 0 ? 'warning' : 'info'),
-    }
-  }
-}
-
-const evaluateTemperatureHealth = (rows = []) => {
-  const safeRows = ensureArray(rows)
-  let criticalCount = 0
-  let warningCount = 0
-
-  safeRows.forEach(row => {
-    const severity = String(row.Severity || '').toLowerCase()
-    if (severity === 'critical') criticalCount++
-    else if (severity === 'warning') warningCount++
-  })
-
-  const problems = []
-  if (criticalCount > 0) {
-    problems.push({
-      severity: 'critical',
-      summary: `${criticalCount} 个传感器温度严重过高，可能导致设备损坏`,
-      kbType: 'CABLE_HIGH_TEMPERATURE'
-    })
-  }
-  if (warningCount > 0) {
-    problems.push({
-      severity: 'warning',
-      summary: `${warningCount} 个传感器温度偏高，建议检查散热`,
-      kbType: 'CABLE_HIGH_TEMPERATURE'
-    })
-  }
-
-  return {
-    problems,
-    stats: {
-      total: safeRows.length,
-      criticalCount,
-      warningCount,
-      severity: criticalCount > 0 ? 'critical' : (warningCount > 0 ? 'warning' : 'info'),
-    }
-  }
-}
-
-const evaluatePowerHealth = (rows = []) => {
-  const safeRows = ensureArray(rows)
-  let psuCriticalCount = 0
-  let psuWarningCount = 0
-  let notPresentCount = 0
-
-  safeRows.forEach(row => {
-    const severity = String(row.Severity || '').toLowerCase()
-    if (severity === 'critical') psuCriticalCount++
-    else if (severity === 'warning') psuWarningCount++
-    if (row.IsPresent === false) notPresentCount++
-  })
-
-  const problems = []
-  if (psuCriticalCount > 0) {
-    problems.push({
-      severity: 'critical',
-      summary: `${psuCriticalCount} 个电源有严重故障，可能影响设备运行`,
-      kbType: 'FAN_SPEED_LOW'
-    })
-  }
-  if (psuWarningCount > 0) {
-    problems.push({
-      severity: 'warning',
-      summary: `${psuWarningCount} 个电源有告警状态`,
-      kbType: 'FAN_SPEED_LOW'
-    })
-  }
-  if (notPresentCount > 0) {
-    problems.push({
-      severity: 'info',
-      summary: `${notPresentCount} 个电源槽位未安装模块`,
-      kbType: 'FAN_SPEED_LOW'
-    })
-  }
-
-  return {
-    problems,
-    stats: {
-      total: safeRows.length,
-      psuCriticalCount,
-      psuWarningCount,
-      notPresentCount,
-      severity: psuCriticalCount > 0 ? 'critical' : (psuWarningCount > 0 ? 'warning' : 'info'),
-    }
-  }
-}
-
-const evaluateRoutingHealth = (rows = []) => {
-  const safeRows = ensureArray(rows)
-  let rnErrorCount = 0
-  let frErrorCount = 0
-  let hbfFallbackCount = 0
-
-  safeRows.forEach(row => {
-    if (toNumber(row.RNErrors) > 0) rnErrorCount++
-    if (toNumber(row.FRErrors) > 0) frErrorCount++
-    if (toNumber(row.HBFFallbackLocal) > 0 || toNumber(row.HBFFallbackRemote) > 0) {
-      hbfFallbackCount++
-    }
-  })
-
-  const problems = []
-  if (frErrorCount > 0) {
-    problems.push({
-      severity: 'critical',
-      summary: `${frErrorCount} 个端口有快速恢复错误，表明链路存在间歇性问题`,
-      kbType: 'XMIT_LINK_DOWN_COUNTER'
-    })
-  }
-  if (rnErrorCount > 0) {
-    problems.push({
-      severity: 'warning',
-      summary: `${rnErrorCount} 个端口有RN (Re-route Notification) 错误`,
-      kbType: 'XMIT_FECN_BECN'
-    })
-  }
-  if (hbfFallbackCount > 0) {
-    problems.push({
-      severity: 'warning',
-      summary: `${hbfFallbackCount} 个端口触发HBF回退，自适应路由效率可能受影响`,
-      kbType: 'XMIT_MODERATE_CONGESTION'
-    })
-  }
-
-  return {
-    problems,
-    stats: {
-      total: safeRows.length,
-      rnErrorCount,
-      frErrorCount,
-      hbfFallbackCount,
-      severity: frErrorCount > 0 ? 'critical' : (rnErrorCount > 0 || hbfFallbackCount > 0 ? 'warning' : 'info'),
-    }
-  }
-}
-
-const summarizeN2NSecurity = (summary = {}, rows = []) => {
-  const safeSummary = summary || {}
-  const totalNodes = safeSummary.total_nodes ?? ensureArray(rows).length
-  const coveragePct = safeSummary.n2n_coverage_pct ?? 0
-  const nodesWithN2N = safeSummary.nodes_with_n2n_enabled ?? 0
-  const nodesWithKeys = safeSummary.nodes_with_keys ?? 0
-  const violations = safeSummary.security_violations ?? 0
-
-  return {
-    totalNodes,
-    coveragePct,
-    nodesWithN2N,
-    nodesWithKeys,
-    violations,
-    severity: violations > 0
-      ? 'critical'
-      : (coveragePct && coveragePct < 80 ? 'warning' : 'info'),
-  }
-}
 // Health Score Component
 function HealthScore({ health }) {
   if (!health) return null
@@ -1818,205 +1192,64 @@ function App() {
         )
       }
       case 'hca': {
-        const { problems: hcaProblems, stats: hcaStats } = evaluateFirmwareHealth(
-          hca_data,
-          firmwareWarnings,
-          pciWarnings
-        )
-
         return (
           <div className="scroll-area">
             <div className="card">
               <h2>Device & Firmware Analysis</h2>
               <p>Firmware version inconsistencies and device anomalies.</p>
-
-              <ProblemSummary
-                title="固件分析"
-                problems={hcaProblems}
-                totalChecked={hcaStats.total}
-                dataType="hca"
-              />
-
-              <DataTable
-                rows={hca_data}
-                totalRows={hca_total_rows}
+              <HcaAnalysis
+                hcaData={hca_data}
+                firmwareWarnings={firmwareWarnings}
+                pciWarnings={pciWarnings}
+                summary={null}
               />
             </div>
           </div>
         )
       }
       case 'latency': {
-        const latencySummary = histogram_summary
-        let latencyInsights = buildLatencyInsights(histogram_data || [])
-        if ((!latencyInsights || latencyInsights.length === 0) && latencySummary?.top_outliers?.length) {
-          const fallbackRows = latencySummary.top_outliers.map(item => ({
-            'Node Name': item.node_name,
-            NodeGUID: item.node_guid,
-            PortNumber: item.port_number,
-            RttMedianUs: item.median_us,
-            RttP99Us: item.p99_us,
-            RttP99OverMedian: item.ratio,
-            RttUpperBucketRatio: item.upper_ratio,
-          }))
-          latencyInsights = buildLatencyInsights(fallbackRows)
-        }
-        const { problems: latencyProblems, stats: latencyStats } = evaluateLatencyHealth(histogram_data)
-
         return (
           <div className="scroll-area">
             <div className="card">
               <h2>Latency Histogram</h2>
               <p>RTT distribution and heavy-tail detection from ibdiagnet histograms.</p>
-
-              {latencySummary && (
-                <div className="summary-box" style={{ marginBottom: '16px', padding: '12px', background: 'var(--sidebar-bg)', borderRadius: '8px' }}>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px' }}>
-                    <div><strong>Total Ports:</strong> {latencySummary.total_ports || 0}</div>
-                    <div><strong>High P99:</strong> <span style={{ color: latencySummary.high_p99_ports > 0 ? '#f97316' : '#22c55e' }}>{latencySummary.high_p99_ports || 0}</span></div>
-                    <div><strong>Tail &gt; 5x:</strong> <span style={{ color: latencySummary.severe_tail_ports > 0 ? '#dc2626' : '#22c55e' }}>{latencySummary.severe_tail_ports || 0}</span></div>
-                    <div><strong>Upper Bucket &gt;10%:</strong> <span style={{ color: latencySummary.upper_bucket_ports > 0 ? '#f59e0b' : '#22c55e' }}>{latencySummary.upper_bucket_ports || 0}</span></div>
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginTop: '8px' }}>
-                    <div><strong>Avg Median RTT:</strong> {(latencySummary.avg_median_us || 0).toFixed(2)} μs</div>
-                    <div><strong>Avg P99 RTT:</strong> {(latencySummary.avg_p99_us || 0).toFixed(2)} μs</div>
-                  </div>
-                </div>
-              )}
-
-              <ProblemSummary
-                title="延迟分析"
-                problems={latencyProblems}
-                totalChecked={latencyStats.total}
-                dataType="histogram"
-              />
-
-              {latencyInsights.length > 0 && (
-                <div className="insight-grid">
-                  {latencyInsights.map((insight, idx) => (
-                    <InsightCard
-                      key={`lat-${idx}`}
-                      title={insight.title}
-                      subtitle={insight.subtitle}
-                      description={insight.description}
-                      severity={insight.severity}
-                      reference={insight.reference}
-                      actions={insight.actions}
-                    />
-                  ))}
-                </div>
-              )}
-              <DataTable
-                rows={histogram_data}
-                totalRows={histogram_total_rows}
+              <LatencyAnalysis
+                histogramData={histogram_data}
+                summary={histogram_summary}
               />
             </div>
           </div>
         )
       }
       case 'fan': {
-        const fanInsights = buildFanInsights(fan_data || [])
-        const { problems: fanProblems, stats: fanStats } = evaluateFanHealth(fan_data)
-
         return (
           <div className="scroll-area">
             <div className="card">
               <h2>Fan &amp; Chassis Health</h2>
               <p>Fan speed deviations based on FANS_SPEED/THRESHOLD tables.</p>
-
-              <ProblemSummary
-                title="风扇健康检查"
-                problems={fanProblems}
-                totalChecked={fanStats.total}
-                dataType="fan"
-              />
-
-              {fanInsights.length > 0 && (
-                <div className="insight-grid">
-                  {fanInsights.map((insight, idx) => (
-                    <InsightCard
-                      key={`fan-${idx}`}
-                      title={insight.title}
-                      subtitle={insight.subtitle}
-                      description={insight.description}
-                      severity={insight.severity}
-                      reference={insight.reference}
-                      actions={insight.actions}
-                    />
-                  ))}
-                </div>
-              )}
-              <DataTable
-                rows={fan_data}
-                totalRows={fan_total_rows}
-              />
+              <FanAnalysis fanData={fan_data} summary={fan_summary} />
             </div>
           </div>
         )
       }
       case 'temperature': {
-        const { problems: tempProblems, stats: tempStats } = evaluateTemperatureHealth(temperature_data)
-
         return (
           <div className="scroll-area">
             <div className="card">
               <h2>Temperature Sensors</h2>
               <p>Switch and device temperature monitoring from TEMPERATURE_SENSORS table.</p>
-
-              <ProblemSummary
-                title="温度监控"
-                problems={tempProblems}
-                totalChecked={tempStats.total}
-                dataType="temperature"
-              />
-
-              {temperature_summary && (
-                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
-                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>Total Sensors:</strong> {temperature_summary.total_sensors || 0}</div>
-                    <div><strong>Avg Temp:</strong> {temperature_summary.avg_temperature || 0}°C</div>
-                    <div><strong>Max Temp:</strong> {temperature_summary.max_temperature || 0}°C</div>
-                  </div>
-                </div>
-              )}
-
-              <DataTable
-                rows={temperature_data}
-                totalRows={temperature_total_rows}
-              />
+              <TemperatureAnalysis temperatureData={temperature_data} summary={temperature_summary} />
             </div>
           </div>
         )
       }
       case 'power': {
-        const { problems: powerProblems, stats: powerStats } = evaluatePowerHealth(power_data)
-
         return (
           <div className="scroll-area">
             <div className="card">
               <h2>Power Supplies</h2>
               <p>Power supply unit status and health from POWER_SUPPLIES table.</p>
-
-              <ProblemSummary
-                title="电源状态"
-                problems={powerProblems}
-                totalChecked={powerStats.total}
-                dataType="power"
-              />
-
-              {power_summary && (
-                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
-                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>Total PSUs:</strong> {power_summary.total_psus || 0}</div>
-                    <div><strong>Present:</strong> {power_summary.present_count || 0}</div>
-                    <div><strong>Total Power:</strong> {power_summary.total_power_consumption || 0}W</div>
-                  </div>
-                </div>
-              )}
-
-              <DataTable
-                rows={power_data}
-                totalRows={power_total_rows}
-              />
+              <PowerAnalysis powerData={power_data} summary={power_summary} />
             </div>
           </div>
         )
@@ -2027,58 +1260,18 @@ function App() {
             <div className="card">
               <h2>Switch Information</h2>
               <p>Switch-level configuration and adaptive routing status.</p>
-
-              {switch_summary && (
-                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
-                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>Total Switches:</strong> {switch_summary.total_switches || 0}</div>
-                    <div><strong>AR Enabled:</strong> {switch_summary.ar_enabled_count || 0}</div>
-                    <div><strong>FR Enabled:</strong> {switch_summary.fr_enabled_count || 0}</div>
-                    <div><strong>HBF Enabled:</strong> {switch_summary.hbf_enabled_count || 0}</div>
-                  </div>
-                </div>
-              )}
-
-              <DataTable
-                rows={switch_data}
-                totalRows={switch_total_rows}
-              />
+              <SwitchesAnalysis switchData={switch_data} summary={switch_summary} />
             </div>
           </div>
         )
       }
       case 'routing': {
-        const { problems: routingProblems, stats: routingStats } = evaluateRoutingHealth(routing_data)
-
         return (
           <div className="scroll-area">
             <div className="card">
               <h2>Adaptive Routing Analysis</h2>
               <p>RN counters, HBF statistics, and fast recovery status.</p>
-
-              <ProblemSummary
-                title="自适应路由分析"
-                problems={routingProblems}
-                totalChecked={routingStats.total}
-                dataType="routing"
-              />
-
-              {routing_summary && (
-                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
-                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>Total Ports:</strong> {routing_summary.total_ports || 0}</div>
-                    <div><strong>AR Traffic:</strong> {routing_summary.ports_with_ar_traffic || 0} ports</div>
-                    <div><strong>HBF Traffic:</strong> {routing_summary.ports_with_hbf_traffic || 0} ports</div>
-                    <div><strong>RN Errors:</strong> {routing_summary.total_rn_errors || 0}</div>
-                    <div><strong>FR Errors:</strong> {routing_summary.total_fr_errors || 0}</div>
-                  </div>
-                </div>
-              )}
-
-              <DataTable
-                rows={routing_data}
-                totalRows={routing_total_rows}
-              />
+              <RoutingAnalysis routingData={routing_data} summary={routing_summary} />
             </div>
           </div>
         )
@@ -2089,22 +1282,7 @@ function App() {
             <div className="card">
               <h2>QoS / VL Arbitration</h2>
               <p>Virtual Lane arbitration configuration and weight distribution analysis.</p>
-
-              {qos_summary && (
-                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
-                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>Total Ports:</strong> {qos_summary.total_ports_analyzed || 0}</div>
-                    <div><strong>Avg VLs/Port:</strong> {qos_summary.avg_vls_per_port || 0}</div>
-                    <div><strong>Single VL Ports:</strong> {qos_summary.ports_with_single_vl || 0}</div>
-                    <div><strong>High Priority Dominant:</strong> {qos_summary.ports_with_high_prio_dominant || 0}</div>
-                  </div>
-                </div>
-              )}
-
-              <DataTable
-                rows={qos_data}
-                totalRows={qos_total_rows}
-              />
+              <QosAnalysis qosData={qos_data} summary={qos_summary} />
             </div>
           </div>
         )
@@ -2115,25 +1293,7 @@ function App() {
             <div className="card">
               <h2>Subnet Manager</h2>
               <p>SM state, priority, and master/standby configuration.</p>
-
-              {sm_info_summary && (
-                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
-                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>Total SMs:</strong> {sm_info_summary.total_sms || 0}</div>
-                    <div><strong>Master:</strong> {sm_info_summary.master_count || 0}</div>
-                    <div><strong>Standby:</strong> {sm_info_summary.standby_count || 0}</div>
-                    <div><strong>Redundancy:</strong> {sm_info_summary.has_redundancy ? 'Yes' : 'No'}</div>
-                    {sm_info_summary.master_sm && (
-                      <div><strong>Master Node:</strong> {sm_info_summary.master_sm.node_name}</div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              <DataTable
-                rows={sm_info_data}
-                totalRows={sm_info_total_rows}
-              />
+              <SmInfoAnalysis smInfoData={sm_info_data} summary={sm_info_summary} />
             </div>
           </div>
         )
@@ -2144,171 +1304,29 @@ function App() {
             <div className="card">
               <h2>Port Hierarchy</h2>
               <p>Network topology hierarchy and port tier/role information.</p>
-
-              {port_hierarchy_summary && (
-                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
-                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>Total Ports:</strong> {port_hierarchy_summary.total_ports || 0}</div>
-                    <div><strong>Unique Nodes:</strong> {port_hierarchy_summary.unique_nodes || 0}</div>
-                    <div><strong>Planes:</strong> {port_hierarchy_summary.plane_count || 0}</div>
-                    <div><strong>Multi-Plane:</strong> {port_hierarchy_summary.is_multi_plane ? 'Yes' : 'No'}</div>
-                  </div>
-                  {port_hierarchy_summary.role_distribution && (
-                    <div style={{ marginTop: '8px' }}>
-                      <strong>Role Distribution:</strong>{' '}
-                      {Object.entries(port_hierarchy_summary.role_distribution).map(([role, count]) => (
-                        <span key={role} style={{ marginRight: '12px' }}>{role}: {count}</span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <DataTable
-                rows={port_hierarchy_data}
-                totalRows={port_hierarchy_total_rows}
-              />
+              <PortHierarchyAnalysis portHierarchyData={port_hierarchy_data} summary={port_hierarchy_summary} />
             </div>
           </div>
         )
       }
       case 'mlnx_counters': {
-        // Analyze MLNX counters problems
-        const mlnxProblems = []
-        let rnrCriticalCount = 0
-        let rnrWarningCount = 0
-        let timeoutCount = 0
-        let qpErrorCount = 0
-
-        ensureArray(mlnx_counters_data).forEach(row => {
-          const severity = String(row.Severity || '').toLowerCase()
-          if (severity === 'critical') rnrCriticalCount++
-          else if (severity === 'warning') rnrWarningCount++
-          if (toNumber(row.Timeouts) > 0) timeoutCount++
-          if (toNumber(row.TotalErrors) > 0) qpErrorCount++
-        })
-
-        if (rnrCriticalCount > 0) {
-          mlnxProblems.push({
-            severity: 'critical',
-            summary: `${rnrCriticalCount} 个端口有严重的RNR/超时问题，可能导致性能下降`,
-            kbType: 'XMIT_SEVERE_CONGESTION'
-          })
-        }
-        if (rnrWarningCount > 0) {
-          mlnxProblems.push({
-            severity: 'warning',
-            summary: `${rnrWarningCount} 个端口有RNR重试或超时警告`,
-            kbType: 'XMIT_MODERATE_CONGESTION'
-          })
-        }
-        if (qpErrorCount > 0) {
-          mlnxProblems.push({
-            severity: 'warning',
-            summary: `${qpErrorCount} 个端口有QP(Queue Pair)错误`,
-            kbType: 'BER_WARNING'
-          })
-        }
-
         return (
           <div className="scroll-area">
             <div className="card">
               <h2>Mellanox Counters (MLNX_CNTRS_INFO)</h2>
               <p>RNR retries, timeouts, and Queue Pair error analysis.</p>
-
-              <ProblemSummary
-                title="MLNX计数器分析"
-                problems={mlnxProblems}
-                totalChecked={ensureArray(mlnx_counters_data).length}
-                dataType="mlnx_counters"
-              />
-
-              {mlnx_counters_summary && (
-                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
-                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>Ports Analyzed:</strong> {mlnx_counters_summary.total_ports_analyzed || 0}</div>
-                    <div><strong>Ports with Activity:</strong> {mlnx_counters_summary.total_ports_with_activity || 0}</div>
-                    <div><strong>RNR Retries:</strong> {mlnx_counters_summary.total_rnr_retries?.toLocaleString() || 0}</div>
-                    <div><strong>Timeouts:</strong> {mlnx_counters_summary.total_timeouts?.toLocaleString() || 0}</div>
-                    <div><strong>QP Errors:</strong> {mlnx_counters_summary.total_qp_errors || 0}</div>
-                  </div>
-                </div>
-              )}
-
-              <DataTable
-                rows={mlnx_counters_data}
-                totalRows={mlnx_counters_total_rows}
-              />
+              <MlnxCountersAnalysis mlnxCountersData={mlnx_counters_data} summary={mlnx_counters_summary} />
             </div>
           </div>
         )
       }
       case 'pm_delta': {
-        // Analyze PM Delta problems
-        const pmDeltaProblems = []
-        let fecCriticalCount = 0
-        let fecWarningCount = 0
-        let relayErrorCount = 0
-
-        ensureArray(pm_delta_data).forEach(row => {
-          const severity = String(row.Severity || '').toLowerCase()
-          if (severity === 'critical') fecCriticalCount++
-          else if (severity === 'warning') fecWarningCount++
-          if (toNumber(row.RelayErrors) > 0) relayErrorCount++
-        })
-
-        if (fecCriticalCount > 0) {
-          pmDeltaProblems.push({
-            severity: 'critical',
-            summary: `${fecCriticalCount} 个端口在诊断期间有FEC不可纠正块，信号严重问题`,
-            kbType: 'BER_CRITICAL'
-          })
-        }
-        if (fecWarningCount > 0) {
-          pmDeltaProblems.push({
-            severity: 'warning',
-            summary: `${fecWarningCount} 个端口有高FEC纠正活动或其他警告`,
-            kbType: 'BER_WARNING'
-          })
-        }
-        if (relayErrorCount > 0) {
-          pmDeltaProblems.push({
-            severity: 'warning',
-            summary: `${relayErrorCount} 个端口有交换机中继错误`,
-            kbType: 'XMIT_FECN_BECN'
-          })
-        }
-
         return (
           <div className="scroll-area">
             <div className="card">
               <h2>Performance Monitor Delta (PM_DELTA)</h2>
               <p>Real-time counter changes during ibdiagnet run: FEC activity, traffic, and active errors.</p>
-
-              <ProblemSummary
-                title="性能计数器增量分析"
-                problems={pmDeltaProblems}
-                totalChecked={ensureArray(pm_delta_data).length}
-                dataType="pm_delta"
-              />
-
-              {pm_delta_summary && (
-                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
-                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>Ports Sampled:</strong> {pm_delta_summary.total_ports_sampled || 0}</div>
-                    <div><strong>Ports with Activity:</strong> {pm_delta_summary.ports_with_activity || 0}</div>
-                    <div><strong>Total TX:</strong> {pm_delta_summary.total_xmit_gb || 0} GB</div>
-                    <div><strong>Total RX:</strong> {pm_delta_summary.total_rcv_gb || 0} GB</div>
-                    <div><strong>FEC Corrected:</strong> {pm_delta_summary.total_fec_corrected?.toLocaleString() || 0}</div>
-                    <div><strong>FEC Uncorrectable:</strong> {pm_delta_summary.total_fec_uncorrectable || 0}</div>
-                  </div>
-                </div>
-              )}
-
-              <DataTable
-                rows={pm_delta_data}
-                totalRows={pm_delta_total_rows}
-              />
+              <PmDeltaAnalysis pmDeltaData={pm_delta_data} summary={pm_delta_summary} />
             </div>
           </div>
         )
@@ -2319,24 +1337,7 @@ function App() {
             <div className="card">
               <h2>Virtual Ports (SR-IOV)</h2>
               <p>Virtual node and port analysis for SR-IOV virtualization deployments.</p>
-
-              {vports_summary && (
-                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
-                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>Total VNodes:</strong> {vports_summary.total_vnodes || 0}</div>
-                    <div><strong>Total VPorts:</strong> {vports_summary.total_vports || 0}</div>
-                    <div><strong>Physical Nodes w/ VNodes:</strong> {vports_summary.physical_nodes_with_vnodes || 0}</div>
-                    <div><strong>Avg VNodes/Physical:</strong> {vports_summary.avg_vnodes_per_physical || 0}</div>
-                    <div><strong>Max VNodes/Physical:</strong> {vports_summary.max_vnodes_per_physical || 0}</div>
-                    <div><strong>Virtualization Enabled:</strong> {vports_summary.virtualization_enabled ? 'Yes' : 'No'}</div>
-                  </div>
-                </div>
-              )}
-
-              <DataTable
-                rows={vports_data}
-                totalRows={vports_total_rows}
-              />
+              <VportsAnalysis vportsData={vports_data} summary={vports_summary} />
             </div>
           </div>
         )
@@ -2347,30 +1348,7 @@ function App() {
             <div className="card">
               <h2>Partition Keys (PKEY)</h2>
               <p>Network isolation and security partitioning configuration.</p>
-
-              {pkey_summary && (
-                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
-                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>Total PKEY Entries:</strong> {pkey_summary.total_pkey_entries || 0}</div>
-                    <div><strong>Unique Partitions:</strong> {pkey_summary.unique_partitions || 0}</div>
-                    <div><strong>Unique Nodes:</strong> {pkey_summary.unique_nodes || 0}</div>
-                    <div><strong>Multi-Partition Nodes:</strong> {pkey_summary.nodes_with_multiple_partitions || 0}</div>
-                    <div><strong>Default Partition Nodes:</strong> {pkey_summary.default_partition_nodes || 0}</div>
-                    <div><strong>Isolation Enabled:</strong> {pkey_summary.isolation_enabled ? 'Yes' : 'No'}</div>
-                  </div>
-                  {pkey_summary.partition_list && pkey_summary.partition_list.length > 0 && (
-                    <div style={{ marginTop: '8px' }}>
-                      <strong>Partitions:</strong> {pkey_summary.partition_list.slice(0, 10).join(', ')}
-                      {pkey_summary.partition_list.length > 10 && ` ... and ${pkey_summary.partition_list.length - 10} more`}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <DataTable
-                rows={pkey_data}
-                totalRows={pkey_total_rows}
-              />
+              <PkeyAnalysis pkeyData={pkey_data} summary={pkey_summary} />
             </div>
           </div>
         )
@@ -2381,44 +1359,7 @@ function App() {
             <div className="card">
               <h2>System Information</h2>
               <p>Hardware inventory, serial numbers, and ibdiagnet run metadata.</p>
-
-              {system_info_summary && (
-                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
-                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>Total Devices:</strong> {system_info_summary.total_devices || 0}</div>
-                    <div><strong>Unique Serials:</strong> {system_info_summary.unique_serials || 0}</div>
-                    <div><strong>Product Types:</strong> {system_info_summary.product_types || 0}</div>
-                    <div><strong>Revision Types:</strong> {system_info_summary.revision_types || 0}</div>
-                  </div>
-                  {system_info_summary.ibdiagnet_version && (
-                    <div style={{ marginTop: '8px' }}>
-                      <strong>IBDiagnet Version:</strong> {system_info_summary.ibdiagnet_version}
-                    </div>
-                  )}
-                  {system_info_summary.run_date && (
-                    <div style={{ marginTop: '4px' }}>
-                      <strong>Run Date:</strong> {system_info_summary.run_date}
-                    </div>
-                  )}
-                  {system_info_summary.product_distribution && Object.keys(system_info_summary.product_distribution).length > 0 && (
-                    <div style={{ marginTop: '8px' }}>
-                      <strong>Product Distribution:</strong>
-                      <div style={{ marginTop: '4px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                        {Object.entries(system_info_summary.product_distribution).slice(0, 5).map(([product, count]) => (
-                          <span key={product} style={{ padding: '2px 8px', background: '#e2e8f0', borderRadius: '4px', fontSize: '0.85rem' }}>
-                            {product}: {count}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <DataTable
-                rows={system_info_data}
-                totalRows={system_info_total_rows}
-              />
+              <SystemInfoAnalysis systemInfoData={system_info_data} summary={system_info_summary} />
             </div>
           </div>
         )
@@ -2429,34 +1370,7 @@ function App() {
             <div className="card">
               <h2>Extended Port Info</h2>
               <p>Bandwidth utilization, unhealthy reasons, and FEC modes per speed.</p>
-
-              {extended_port_info_summary && (
-                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
-                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>Total Ports:</strong> {extended_port_info_summary.total_ports || 0}</div>
-                    <div><strong>Unhealthy Ports:</strong> <span style={{ color: extended_port_info_summary.unhealthy_ports > 0 ? '#dc2626' : '#22c55e' }}>{extended_port_info_summary.unhealthy_ports || 0}</span></div>
-                    <div><strong>Avg BW Utilization:</strong> {extended_port_info_summary.avg_bw_utilization?.toFixed(1) || 0}%</div>
-                    <div><strong>Max BW Utilization:</strong> {extended_port_info_summary.max_bw_utilization?.toFixed(1) || 0}%</div>
-                  </div>
-                  {extended_port_info_summary.unhealthy_reasons && Object.keys(extended_port_info_summary.unhealthy_reasons).length > 0 && (
-                    <div style={{ marginTop: '8px' }}>
-                      <strong>Unhealthy Reasons:</strong>
-                      <div style={{ marginTop: '4px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                        {Object.entries(extended_port_info_summary.unhealthy_reasons).map(([reason, count]) => (
-                          <span key={reason} style={{ padding: '2px 8px', background: '#fecaca', color: '#991b1b', borderRadius: '4px', fontSize: '0.85rem' }}>
-                            {reason}: {count}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <DataTable
-                rows={extended_port_info_data}
-                totalRows={extended_port_info_total_rows}
-              />
+              <ExtendedPortInfoAnalysis extendedPortInfoData={extended_port_info_data} summary={extended_port_info_summary} />
             </div>
           </div>
         )
@@ -2467,27 +1381,7 @@ function App() {
             <div className="card">
               <h2>Adaptive Routing (AR)</h2>
               <p>AR, Fast Recovery (FR), and Hash-Based Forwarding (HBF) configuration.</p>
-
-              {ar_info_summary && (
-                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
-                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>Total Switches:</strong> {ar_info_summary.total_switches || 0}</div>
-                    <div><strong>AR Supported:</strong> {ar_info_summary.ar_supported || 0}</div>
-                    <div><strong>FR Enabled:</strong> {ar_info_summary.fr_enabled || 0} / {ar_info_summary.fr_supported || 0}</div>
-                    <div><strong>HBF Enabled:</strong> {ar_info_summary.hbf_enabled || 0} / {ar_info_summary.hbf_supported || 0}</div>
-                  </div>
-                  <div style={{ marginTop: '8px', display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>FR Coverage:</strong> <span style={{ color: ar_info_summary.fr_coverage_pct >= 80 ? '#22c55e' : '#eab308' }}>{ar_info_summary.fr_coverage_pct?.toFixed(1) || 0}%</span></div>
-                    <div><strong>HBF Coverage:</strong> <span style={{ color: ar_info_summary.hbf_coverage_pct >= 80 ? '#22c55e' : '#eab308' }}>{ar_info_summary.hbf_coverage_pct?.toFixed(1) || 0}%</span></div>
-                    <div><strong>PFRN Enabled:</strong> {ar_info_summary.pfrn_enabled || 0} / {ar_info_summary.pfrn_supported || 0}</div>
-                  </div>
-                </div>
-              )}
-
-              <DataTable
-                rows={ar_info_data}
-                totalRows={ar_info_total_rows}
-              />
+              <ArInfoAnalysis arInfoData={ar_info_data} summary={ar_info_summary} />
             </div>
           </div>
         )
@@ -2498,39 +1392,7 @@ function App() {
             <div className="card">
               <h2>SHARP (Scalable Hierarchical Aggregation)</h2>
               <p>SHARP aggregation nodes for AI/ML collective operations.</p>
-
-              {sharp_summary && (
-                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
-                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>SHARP Nodes:</strong> {sharp_summary.total_sharp_nodes || 0}</div>
-                    <div><strong>SHARP Enabled:</strong> {sharp_summary.sharp_enabled ? 'Yes' : 'No'}</div>
-                    <div><strong>Total Tree Capacity:</strong> {sharp_summary.total_tree_capacity || 0}</div>
-                    <div><strong>Total Jobs Capacity:</strong> {sharp_summary.total_jobs_capacity || 0}</div>
-                  </div>
-                  <div style={{ marginTop: '8px', display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>Avg Tree Size:</strong> {sharp_summary.avg_tree_size || 0}</div>
-                    <div><strong>Avg Jobs/Node:</strong> {sharp_summary.avg_jobs_per_node || 0}</div>
-                    <div><strong>Max QPs/Node:</strong> {sharp_summary.max_qps_per_node || 0}</div>
-                  </div>
-                  {sharp_summary.data_types_supported && sharp_summary.data_types_supported.length > 0 && (
-                    <div style={{ marginTop: '8px' }}>
-                      <strong>Supported Data Types:</strong>
-                      <div style={{ marginTop: '4px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                        {sharp_summary.data_types_supported.map(dtype => (
-                          <span key={dtype} style={{ padding: '2px 8px', background: '#dbeafe', color: '#1e40af', borderRadius: '4px', fontSize: '0.85rem' }}>
-                            {dtype}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <DataTable
-                rows={sharp_data}
-                totalRows={sharp_total_rows}
-              />
+              <SharpAnalysis sharpData={sharp_data} summary={sharp_summary} />
             </div>
           </div>
         )
@@ -2541,38 +1403,7 @@ function App() {
             <div className="card">
               <h2>FEC Mode Configuration</h2>
               <p>Forward Error Correction support and enablement per speed.</p>
-
-              {fec_mode_summary && (
-                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
-                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>Total Ports:</strong> {fec_mode_summary.total_ports || 0}</div>
-                    <div><strong>Ports without FEC:</strong> <span style={{ color: fec_mode_summary.ports_without_fec > 0 ? '#eab308' : '#22c55e' }}>{fec_mode_summary.ports_without_fec || 0}</span></div>
-                    <div><strong>Ports with RS-FEC:</strong> {fec_mode_summary.ports_with_rs_fec || 0}</div>
-                    <div><strong>Config Mismatches:</strong> <span style={{ color: fec_mode_summary.mismatch_count > 0 ? '#dc2626' : '#22c55e' }}>{fec_mode_summary.mismatch_count || 0}</span></div>
-                  </div>
-                  <div style={{ marginTop: '8px', display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>HDR Capable:</strong> {fec_mode_summary.hdr_capable_ports || 0}</div>
-                    <div><strong>NDR Capable:</strong> {fec_mode_summary.ndr_capable_ports || 0}</div>
-                  </div>
-                  {fec_mode_summary.fec_active_distribution && Object.keys(fec_mode_summary.fec_active_distribution).length > 0 && (
-                    <div style={{ marginTop: '8px' }}>
-                      <strong>FEC Active Distribution:</strong>
-                      <div style={{ marginTop: '4px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                        {Object.entries(fec_mode_summary.fec_active_distribution).slice(0, 5).map(([mode, count]) => (
-                          <span key={mode} style={{ padding: '2px 8px', background: mode.includes('RS-FEC') ? '#dcfce7' : '#fef3c7', color: mode.includes('RS-FEC') ? '#166534' : '#92400e', borderRadius: '4px', fontSize: '0.85rem' }}>
-                            {mode}: {count}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <DataTable
-                rows={fec_mode_data}
-                totalRows={fec_mode_total_rows}
-              />
+              <FecModeAnalysis fecModeData={fec_mode_data} summary={fec_mode_summary} />
             </div>
           </div>
         )
@@ -2583,25 +1414,7 @@ function App() {
             <div className="card">
               <h2>Physical Layer Diagnostics</h2>
               <p>PHY-level signal integrity and diagnostic data.</p>
-
-              {phy_diagnostics_summary && (
-                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
-                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>Total Ports:</strong> {phy_diagnostics_summary.total_ports || 0}</div>
-                    <div><strong>Diagnostic Fields:</strong> {phy_diagnostics_summary.total_diagnostic_fields || 0}</div>
-                    <div><strong>Ports with Data:</strong> {phy_diagnostics_summary.ports_with_data || 0}</div>
-                  </div>
-                  <div style={{ marginTop: '8px', display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>Avg Non-Zero Fields:</strong> {phy_diagnostics_summary.avg_non_zero_fields || 0}</div>
-                    <div><strong>Max Non-Zero Fields:</strong> {phy_diagnostics_summary.max_non_zero_fields || 0}</div>
-                  </div>
-                </div>
-              )}
-
-              <DataTable
-                rows={phy_diagnostics_data}
-                totalRows={phy_diagnostics_total_rows}
-              />
+              <PhyDiagnosticsAnalysis phyDiagnosticsData={phy_diagnostics_data} summary={phy_diagnostics_summary} />
             </div>
           </div>
         )
@@ -2612,26 +1425,7 @@ function App() {
             <div className="card">
               <h2>Neighbors Topology</h2>
               <p>Neighbor relationships and link properties for topology analysis.</p>
-
-              {neighbors_summary && (
-                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
-                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>Neighbor Entries:</strong> {neighbors_summary.total_neighbor_entries || 0}</div>
-                    <div><strong>Unique Nodes:</strong> {neighbors_summary.unique_nodes || 0}</div>
-                    <div><strong>Avg Connections/Node:</strong> {neighbors_summary.avg_connections_per_node || 0}</div>
-                    <div><strong>Max Connections:</strong> {neighbors_summary.max_connections_per_node || 0}</div>
-                  </div>
-                  <div style={{ marginTop: '8px', display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>Speed Mismatches:</strong> <span style={{ color: neighbors_summary.mismatched_speeds > 0 ? '#dc2626' : '#22c55e' }}>{neighbors_summary.mismatched_speeds || 0}</span></div>
-                    <div><strong>Width Mismatches:</strong> <span style={{ color: neighbors_summary.mismatched_widths > 0 ? '#dc2626' : '#22c55e' }}>{neighbors_summary.mismatched_widths || 0}</span></div>
-                  </div>
-                </div>
-              )}
-
-              <DataTable
-                rows={neighbors_data}
-                totalRows={neighbors_total_rows}
-              />
+              <NeighborsAnalysis neighborsData={neighbors_data} summary={neighbors_summary} />
             </div>
           </div>
         )
@@ -2642,25 +1436,7 @@ function App() {
             <div className="card">
               <h2>Buffer Histograms</h2>
               <p>Buffer congestion analysis for bottleneck detection.</p>
-
-              {buffer_histogram_summary && (
-                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
-                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>Total Entries:</strong> {buffer_histogram_summary.total_entries || 0}</div>
-                    <div><strong>Total Samples:</strong> {buffer_histogram_summary.total_samples?.toLocaleString() || 0}</div>
-                    <div><strong>High Utilization:</strong> <span style={{ color: buffer_histogram_summary.high_utilization_count > 0 ? '#eab308' : '#22c55e' }}>{buffer_histogram_summary.high_utilization_count || 0}</span></div>
-                    <div><strong>Critical:</strong> <span style={{ color: buffer_histogram_summary.critical_utilization_count > 0 ? '#dc2626' : '#22c55e' }}>{buffer_histogram_summary.critical_utilization_count || 0}</span></div>
-                  </div>
-                  <div style={{ marginTop: '8px' }}>
-                    <strong>Max Utilization:</strong> {buffer_histogram_summary.max_utilization_pct || 0}%
-                  </div>
-                </div>
-              )}
-
-              <DataTable
-                rows={buffer_histogram_data}
-                totalRows={buffer_histogram_total_rows}
-              />
+              <BufferHistogramAnalysis bufferHistogramData={buffer_histogram_data} summary={buffer_histogram_summary} />
             </div>
           </div>
         )
@@ -2671,34 +1447,7 @@ function App() {
             <div className="card">
               <h2>Extended Node Information</h2>
               <p>Extended node attributes and SMP capabilities.</p>
-
-              {extended_node_info_summary && (
-                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
-                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>Total Nodes:</strong> {extended_node_info_summary.total_nodes || 0}</div>
-                    <div><strong>Total Ports:</strong> {extended_node_info_summary.total_ports || 0}</div>
-                    <div><strong>Avg Ports/Node:</strong> {extended_node_info_summary.avg_ports_per_node || 0}</div>
-                    <div><strong>SMP Entries:</strong> {extended_node_info_summary.smp_entries || 0}</div>
-                  </div>
-                  {extended_node_info_summary.node_type_distribution && Object.keys(extended_node_info_summary.node_type_distribution).length > 0 && (
-                    <div style={{ marginTop: '8px' }}>
-                      <strong>Node Types:</strong>
-                      <div style={{ marginTop: '4px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                        {Object.entries(extended_node_info_summary.node_type_distribution).map(([type, count]) => (
-                          <span key={type} style={{ padding: '2px 8px', background: '#e2e8f0', borderRadius: '4px', fontSize: '0.85rem' }}>
-                            {type}: {count}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <DataTable
-                rows={extended_node_info_data}
-                totalRows={extended_node_info_total_rows}
-              />
+              <ExtendedNodeInfoAnalysis extendedNodeInfoData={extended_node_info_data} summary={extended_node_info_summary} />
             </div>
           </div>
         )
@@ -2709,26 +1458,7 @@ function App() {
             <div className="card">
               <h2>Extended Switch Information</h2>
               <p>Switch-specific capabilities and LFT/multicast capacity.</p>
-
-              {extended_switch_info_summary && (
-                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
-                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>Total Switches:</strong> {extended_switch_info_summary.total_switches || 0}</div>
-                    <div><strong>Enhanced Port0:</strong> {extended_switch_info_summary.enhanced_port0_count || 0}</div>
-                    <div><strong>Multicast Enabled:</strong> {extended_switch_info_summary.multicast_enabled_count || 0}</div>
-                    <div><strong>AR Capable:</strong> {extended_switch_info_summary.ar_capable_count || 0}</div>
-                  </div>
-                  <div style={{ marginTop: '8px', display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>Total Multicast Cap:</strong> {extended_switch_info_summary.total_multicast_capacity?.toLocaleString() || 0}</div>
-                    <div><strong>Filter Raw Enabled:</strong> {extended_switch_info_summary.filter_raw_enabled_count || 0}</div>
-                  </div>
-                </div>
-              )}
-
-              <DataTable
-                rows={extended_switch_info_data}
-                totalRows={extended_switch_info_total_rows}
-              />
+              <ExtendedSwitchInfoAnalysis extendedSwitchInfoData={extended_switch_info_data} summary={extended_switch_info_summary} />
             </div>
           </div>
         )
@@ -2739,26 +1469,7 @@ function App() {
             <div className="card">
               <h2>Power Sensors</h2>
               <p>Individual power sensor readings for detailed power monitoring.</p>
-
-              {power_sensors_summary && (
-                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
-                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>Total Sensors:</strong> {power_sensors_summary.total_sensors || 0}</div>
-                    <div><strong>Unique Nodes:</strong> {power_sensors_summary.unique_nodes || 0}</div>
-                    <div><strong>Total Power:</strong> {power_sensors_summary.total_power_w?.toFixed(1) || 0} W</div>
-                    <div><strong>Max Sensor:</strong> {power_sensors_summary.max_sensor_power_mw?.toFixed(1) || 0} mW</div>
-                  </div>
-                  <div style={{ marginTop: '8px', display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>Warnings:</strong> <span style={{ color: power_sensors_summary.warning_count > 0 ? '#eab308' : '#22c55e' }}>{power_sensors_summary.warning_count || 0}</span></div>
-                    <div><strong>Critical:</strong> <span style={{ color: power_sensors_summary.critical_count > 0 ? '#dc2626' : '#22c55e' }}>{power_sensors_summary.critical_count || 0}</span></div>
-                  </div>
-                </div>
-              )}
-
-              <DataTable
-                rows={power_sensors_data}
-                totalRows={power_sensors_total_rows}
-              />
+              <PowerSensorsAnalysis powerSensorsData={power_sensors_data} summary={power_sensors_summary} />
             </div>
           </div>
         )
@@ -2769,26 +1480,7 @@ function App() {
             <div className="card">
               <h2>HBF/PFRN Routing Configuration</h2>
               <p>Hash-Based Forwarding and Precise Forwarding Routing Notification config.</p>
-
-              {routing_config_summary && (
-                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
-                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>Total Switches:</strong> {routing_config_summary.total_switches || 0}</div>
-                    <div><strong>HBF Enabled:</strong> {routing_config_summary.hbf_enabled_count || 0}</div>
-                    <div><strong>PFRN Enabled:</strong> {routing_config_summary.pfrn_enabled_count || 0}</div>
-                  </div>
-                  <div style={{ marginTop: '8px', display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>HBF Coverage:</strong> <span style={{ color: routing_config_summary.hbf_coverage_pct >= 80 ? '#22c55e' : '#eab308' }}>{routing_config_summary.hbf_coverage_pct?.toFixed(1) || 0}%</span></div>
-                    <div><strong>PFRN Coverage:</strong> <span style={{ color: routing_config_summary.pfrn_coverage_pct >= 80 ? '#22c55e' : '#eab308' }}>{routing_config_summary.pfrn_coverage_pct?.toFixed(1) || 0}%</span></div>
-                    <div><strong>Unique Seeds:</strong> {routing_config_summary.unique_seeds || 0}</div>
-                  </div>
-                </div>
-              )}
-
-              <DataTable
-                rows={routing_config_data}
-                totalRows={routing_config_total_rows}
-              />
+              <RoutingConfigAnalysis routingConfigData={routing_config_data} summary={routing_config_summary} />
             </div>
           </div>
         )
@@ -2799,26 +1491,7 @@ function App() {
             <div className="card">
               <h2>Temperature Alerts</h2>
               <p>Temperature threshold configuration and alert status.</p>
-
-              {temp_alerts_summary && (
-                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
-                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>Total Sensors:</strong> {temp_alerts_summary.total_sensors || 0}</div>
-                    <div><strong>Max Temp:</strong> {temp_alerts_summary.max_temperature || 0}°C</div>
-                    <div><strong>Healthy:</strong> <span style={{ color: '#22c55e' }}>{temp_alerts_summary.healthy_sensors || 0}</span></div>
-                    <div><strong>Over Threshold:</strong> <span style={{ color: temp_alerts_summary.over_threshold_count > 0 ? '#dc2626' : '#22c55e' }}>{temp_alerts_summary.over_threshold_count || 0}</span></div>
-                  </div>
-                  <div style={{ marginTop: '8px', display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>Warnings:</strong> <span style={{ color: temp_alerts_summary.warning_count > 0 ? '#eab308' : '#22c55e' }}>{temp_alerts_summary.warning_count || 0}</span></div>
-                    <div><strong>Critical:</strong> <span style={{ color: temp_alerts_summary.critical_count > 0 ? '#dc2626' : '#22c55e' }}>{temp_alerts_summary.critical_count || 0}</span></div>
-                  </div>
-                </div>
-              )}
-
-              <DataTable
-                rows={temp_alerts_data}
-                totalRows={temp_alerts_total_rows}
-              />
+              <TempAlertsAnalysis tempAlertsData={temp_alerts_data} summary={temp_alerts_summary} />
             </div>
           </div>
         )
@@ -2829,25 +1502,7 @@ function App() {
             <div className="card">
               <h2>Credit Watchdog Timeouts</h2>
               <p>Flow control credit watchdog timeout counters.</p>
-
-              {credit_watchdog_summary && (
-                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
-                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>Total Entries:</strong> {credit_watchdog_summary.total_entries || 0}</div>
-                    <div><strong>Ports with Timeouts:</strong> <span style={{ color: credit_watchdog_summary.ports_with_timeouts > 0 ? '#dc2626' : '#22c55e' }}>{credit_watchdog_summary.ports_with_timeouts || 0}</span></div>
-                    <div><strong>Total Timeout Events:</strong> {credit_watchdog_summary.total_timeout_events?.toLocaleString() || 0}</div>
-                    <div><strong>Max Count:</strong> {credit_watchdog_summary.max_timeout_count?.toLocaleString() || 0}</div>
-                  </div>
-                  <div style={{ marginTop: '8px' }}>
-                    <strong>Affected VLs:</strong> {credit_watchdog_summary.affected_vls || 0}
-                  </div>
-                </div>
-              )}
-
-              <DataTable
-                rows={credit_watchdog_data}
-                totalRows={credit_watchdog_total_rows}
-              />
+              <CreditWatchdogAnalysis creditWatchdogData={credit_watchdog_data} summary={credit_watchdog_summary} />
             </div>
           </div>
         )
@@ -2856,34 +1511,9 @@ function App() {
         return (
           <div className="scroll-area">
             <div className="card">
-              <h2><HardDrive size={20} /> PCIe Performance</h2>
-              {pci_performance_summary && (
-                <div className="summary-box" style={{ marginBottom: '16px', padding: '12px', background: 'var(--sidebar-bg)', borderRadius: '8px' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
-                    <div><strong>Total Nodes:</strong> {pci_performance_summary.total_nodes || 0}</div>
-                    <div><strong>Degraded:</strong> <span style={{ color: pci_performance_summary.degraded_count > 0 ? '#dc2626' : '#22c55e' }}>{pci_performance_summary.degraded_count || 0}</span></div>
-                    <div><strong>AER Errors:</strong> <span style={{ color: pci_performance_summary.aer_error_nodes > 0 ? '#dc2626' : '#22c55e' }}>{pci_performance_summary.aer_error_nodes || 0}</span></div>
-                    <div><strong>Avg Bandwidth:</strong> {pci_performance_summary.avg_bandwidth_gbps?.toFixed(1) || 0} GB/s</div>
-                  </div>
-                  {pci_performance_summary.gen_distribution && Object.keys(pci_performance_summary.gen_distribution).length > 0 && (
-                    <div style={{ marginTop: '12px' }}>
-                      <strong>Generation Distribution:</strong>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '4px' }}>
-                        {Object.entries(pci_performance_summary.gen_distribution).map(([gen, count]) => (
-                          <span key={gen} style={{ background: 'var(--button-bg)', padding: '4px 8px', borderRadius: '4px', fontSize: '0.85em' }}>
-                            {gen}: {count}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <DataTable
-                rows={pci_performance_data}
-                totalRows={pci_performance_total_rows}
-              />
+              <h2>PCIe Performance</h2>
+              <p>PCIe generation, bandwidth, and degradation analysis.</p>
+              <PciPerformanceAnalysis pciPerformanceData={pci_performance_data} summary={pci_performance_summary} />
             </div>
           </div>
         )
@@ -2892,28 +1522,9 @@ function App() {
         return (
           <div className="scroll-area">
             <div className="card">
-              <h2><BarChart3 size={20} /> BER Advanced Analysis</h2>
-              {ber_advanced_summary && (
-                <div className="summary-box" style={{ marginBottom: '16px', padding: '12px', background: 'var(--sidebar-bg)', borderRadius: '8px' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
-                    <div><strong>Total Ports:</strong> {ber_advanced_summary.total_ports || 0}</div>
-                    <div><strong>Critical BER:</strong> <span style={{ color: ber_advanced_summary.critical_ber_count > 0 ? '#dc2626' : '#22c55e' }}>{ber_advanced_summary.critical_ber_count || 0}</span></div>
-                    <div><strong>Warning BER:</strong> <span style={{ color: ber_advanced_summary.warning_ber_count > 0 ? '#f59e0b' : '#22c55e' }}>{ber_advanced_summary.warning_ber_count || 0}</span></div>
-                    <div><strong>Healthy Ports:</strong> <span style={{ color: '#22c55e' }}>{ber_advanced_summary.healthy_ports || 0}</span></div>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginTop: '12px' }}>
-                    <div><strong>Lanes Analyzed:</strong> {ber_advanced_summary.total_lanes_analyzed?.toLocaleString() || 0}</div>
-                    <div><strong>FEC Corrected:</strong> {ber_advanced_summary.fec_corrected_total?.toLocaleString() || 0}</div>
-                    <div><strong>FEC Uncorrected:</strong> <span style={{ color: ber_advanced_summary.fec_uncorrected_total > 0 ? '#dc2626' : '#22c55e' }}>{ber_advanced_summary.fec_uncorrected_total?.toLocaleString() || 0}</span></div>
-                    {ber_advanced_summary.worst_ber_log10 && <div><strong>Worst BER:</strong> 10^{ber_advanced_summary.worst_ber_log10}</div>}
-                  </div>
-                </div>
-              )}
-
-              <DataTable
-                rows={ber_advanced_data}
-                totalRows={ber_advanced_total_rows}
-              />
+              <h2>BER Advanced Analysis</h2>
+              <p>Advanced bit error rate analysis with FEC statistics.</p>
+              <BerAdvancedAnalysis berAdvancedData={ber_advanced_data} summary={ber_advanced_summary} />
             </div>
           </div>
         )
@@ -2922,34 +1533,9 @@ function App() {
         return (
           <div className="scroll-area">
             <div className="card">
-              <h2><Layers size={20} /> Per-Lane Performance</h2>
-              {per_lane_performance_summary && (
-                <div className="summary-box" style={{ marginBottom: '16px', padding: '12px', background: 'var(--sidebar-bg)', borderRadius: '8px' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
-                    <div><strong>Lanes Analyzed:</strong> {per_lane_performance_summary.total_lanes_analyzed?.toLocaleString() || 0}</div>
-                    <div><strong>Ports Analyzed:</strong> {per_lane_performance_summary.total_ports_analyzed || 0}</div>
-                    <div><strong>Lanes with Issues:</strong> <span style={{ color: per_lane_performance_summary.lanes_with_issues > 0 ? '#dc2626' : '#22c55e' }}>{per_lane_performance_summary.lanes_with_issues || 0}</span></div>
-                    <div><strong>Issue Rate:</strong> <span style={{ color: per_lane_performance_summary.issue_rate_pct > 1 ? '#dc2626' : '#22c55e' }}>{per_lane_performance_summary.issue_rate_pct || 0}%</span></div>
-                  </div>
-                  {per_lane_performance_summary.lane_error_distribution && Object.keys(per_lane_performance_summary.lane_error_distribution).length > 0 && (
-                    <div style={{ marginTop: '12px' }}>
-                      <strong>Errors by Lane:</strong>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '4px' }}>
-                        {Object.entries(per_lane_performance_summary.lane_error_distribution).map(([lane, count]) => (
-                          <span key={lane} style={{ background: count > 0 ? '#fee2e2' : 'var(--button-bg)', padding: '4px 8px', borderRadius: '4px', fontSize: '0.85em' }}>
-                            Lane {lane}: {count}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <DataTable
-                rows={per_lane_performance_data}
-                totalRows={per_lane_performance_total_rows}
-              />
+              <h2>Per-Lane Performance</h2>
+              <p>Per-lane signal quality and error distribution analysis.</p>
+              <PerLanePerformanceAnalysis perLanePerformanceData={per_lane_performance_data} summary={per_lane_performance_summary} />
             </div>
           </div>
         )
@@ -2958,34 +1544,9 @@ function App() {
         return (
           <div className="scroll-area">
             <div className="card">
-              <h2><Shield size={20} /> N2N Security</h2>
-              {n2n_security_summary && (
-                <div className="summary-box" style={{ marginBottom: '16px', padding: '12px', background: 'var(--sidebar-bg)', borderRadius: '8px' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
-                    <div><strong>Total Nodes:</strong> {n2n_security_summary.total_nodes || 0}</div>
-                    <div><strong>N2N Enabled:</strong> {n2n_security_summary.nodes_with_n2n_enabled || 0} ({n2n_security_summary.n2n_coverage_pct || 0}%)</div>
-                    <div><strong>With Keys:</strong> {n2n_security_summary.nodes_with_keys || 0} ({n2n_security_summary.key_coverage_pct || 0}%)</div>
-                    <div><strong>Security Violations:</strong> <span style={{ color: n2n_security_summary.security_violations > 0 ? '#dc2626' : '#22c55e' }}>{n2n_security_summary.security_violations || 0}</span></div>
-                  </div>
-                  {n2n_security_summary.capability_distribution && Object.keys(n2n_security_summary.capability_distribution).length > 0 && (
-                    <div style={{ marginTop: '12px' }}>
-                      <strong>Capability Distribution:</strong>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '4px' }}>
-                        {Object.entries(n2n_security_summary.capability_distribution).slice(0, 6).map(([cap, count]) => (
-                          <span key={cap} style={{ background: 'var(--button-bg)', padding: '4px 8px', borderRadius: '4px', fontSize: '0.85em' }}>
-                            {cap}: {count}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <DataTable
-                rows={n2n_security_data}
-                totalRows={n2n_security_total_rows}
-              />
+              <h2>N2N Security</h2>
+              <p>Node-to-node encryption and security configuration status.</p>
+              <N2nSecurityAnalysis n2nSecurityData={n2n_security_data} summary={n2n_security_summary} />
             </div>
           </div>
         )

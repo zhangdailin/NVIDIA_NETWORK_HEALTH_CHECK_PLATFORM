@@ -8,7 +8,27 @@
       "Bash(dir:*)",
       "Bash(npm run build)",
       "Bash(npm install:*)",
-      "Bash(npx tailwindcss init:*)"
+      "Bash(npx tailwindcss init:*)",
+      "Bash(timeout 5 tail:*)",
+      "Bash(exit 0)",
+      "Bash(timeout 8 tail:*)",
+      "Bash(ls:*)",
+      "Bash(grep:*)",
+      "Bash(cd:*)",
+      "Bash(findstr:*)",
+      "Bash(wc:*)",
+      "Bash(git checkout:*)",
+      "Bash(for file in *Analysis.jsx)",
+      "Bash(do if ! grep -q \"UnifiedAnalysisPage\" \"$file\")",
+      "Bash(then echo \"$file\")",
+      "Bash(fi:*)",
+      "Bash(done)",
+      "Bash(npx eslint:*)",
+      "Bash(do)",
+      "Bash(if grep -q \"toNumber\" \"$file\")",
+      "Bash(then)",
+      "Bash(echo:*)",
+      "Bash(else)"
     ]
   }
 }

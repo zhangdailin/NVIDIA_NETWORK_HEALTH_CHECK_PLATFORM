@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { AlertTriangle, XCircle, AlertCircle, ChevronDown, ChevronUp, BookOpen, Clock3, Search, Download, ChevronLeft, ChevronRight } from 'lucide-react'
 import { getErrorExplanation } from './ErrorExplanations'
+import { toNumber, hasAlarmFlag } from './analysisUtils'
 
 /**
  * 故障汇总组件 - 卡片式详细展示,支持分页和搜索
@@ -32,30 +33,6 @@ function FaultSummary({ analysisData }) {
       color: '#3b82f6',
       bgColor: '#dbeafe',
       icon: <AlertCircle size={20} />
-    }
-  }
-
-  // Helper to safely convert to number
-  const toNumber = (value) => {
-    const num = Number(value)
-    return Number.isFinite(num) ? num : 0
-  }
-
-  // Helper to check alarm flags
-  const hasAlarmFlag = (value) => {
-    if (value === null || value === undefined) return false
-    const text = String(value).trim()
-    if (!text || text.toLowerCase() === 'n/a') return false
-    const token = text.split(/\s+/)[0]
-    if (!token) return false
-    try {
-      if (token.toLowerCase().startsWith('0x')) {
-        return parseInt(token, 16) !== 0
-      }
-      const parsed = Number(token)
-      return Number.isFinite(parsed) && parsed !== 0
-    } catch {
-      return false
     }
   }
 

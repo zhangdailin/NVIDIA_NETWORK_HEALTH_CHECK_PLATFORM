@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react'
-
-const ITEMS_PER_PAGE = 20
+import { AlertTriangle, Activity, Shield, Database } from 'lucide-react'
+import DataTable from './DataTable'
+import { formatCount, toNumber } from './analysisUtils'
 
 const normalizeValue = (value, fallback = 'N/A') => {
   if (value === null || value === undefined) {
@@ -52,16 +52,6 @@ const pickFormattedBer = (directCandidates = [], numericCandidates = [], logCand
   return 'N/A'
 }
 
-const toInteger = (value) => {
-  const num = Number(value)
-  return Number.isFinite(num) ? num : 0
-}
-
-const formatCount = (value) => {
-  const count = toInteger(value)
-  return count.toLocaleString('en-US')
-}
-
 const extractSymbolBer = (row) => {
   return pickFormattedBer(
     [row['Symbol BER'], row.SymbolBER, row.symbolBer],
@@ -94,7 +84,7 @@ const mergeRows = (berData, berAdvancedData) => {
 
 const buildDisplayRows = (rows) => rows.map((row, index) => {
   const severity = String(row.SymbolBERSeverity || row.Severity || '').toLowerCase()
-  const hasSymbolErrors = toInteger(row['Symbol Err'] ?? row.SymbolErr ?? row.symbolErr) > 0
+  const hasSymbolErrors = toNumber(row['Symbol Err'] ?? row.SymbolErr ?? row.symbolErr) > 0
   const fallbackAnomaly = ['critical', 'warning'].includes(severity) && hasSymbolErrors ? 'High Symbol BER' : ''
 
   return {
@@ -124,170 +114,255 @@ const buildDisplayRows = (rows) => rows.map((row, index) => {
     symbolErr: formatCount(row['Symbol Err'] ?? row.SymbolErr),
     effectiveErr: formatCount(row['Effective Err'] ?? row.EffectiveErr),
     hasSymbolErrors,
+    severity,
   }
 })
 
 function BERAnalysis({ berData = [], berAdvancedData = [], showOnlyProblematic = false }) {
-  const [searchTerm, setSearchTerm] = useState('')
-  const [currentPage, setCurrentPage] = useState(1)
-  const [showProblemsOnly, setShowProblemsOnly] = useState(showOnlyProblematic)
+  const merged = mergeRows(berData, berAdvancedData)
+  const displayRows = buildDisplayRows(merged)
+  const problemRows = displayRows.filter(row => row.hasSymbolErrors && !!row.ibhAnomaly)
 
-  const displayRows = useMemo(() => {
-    const merged = mergeRows(berData, berAdvancedData)
-    return buildDisplayRows(merged)
-  }, [berData, berAdvancedData])
-
-  const problemRows = useMemo(
-    () => displayRows.filter(row => row.hasSymbolErrors && !!row.ibhAnomaly),
-    [displayRows]
-  )
+  const criticalPorts = displayRows.filter(row => row.severity === 'critical').length
+  const warningPorts = displayRows.filter(row => row.severity === 'warning').length
+  const totalPorts = displayRows.length
+  const problemCount = problemRows.length
 
   if (displayRows.length === 0) {
     return (
-      <div style={{ padding: '24px', textAlign: 'center', color: '#6b7280' }}>
-        <p>无BER数据</p>
+      <div className="osc-empty">
+        <p>未检测到 BER 测试数据。</p>
+        <p style={{ margin: 0, color: '#6b7280' }}>
+          请确认采集的数据包中包含 BER 相关表格。
+        </p>
       </div>
     )
   }
 
-  const rowsForView = showProblemsOnly ? problemRows : displayRows
-  const term = searchTerm.trim().toLowerCase()
-  const filteredRows = term
-    ? rowsForView.filter(row =>
-        Object.values(row).some(value =>
-          typeof value === 'string' && value.toLowerCase().includes(term)
-        )
-      )
-    : rowsForView
+  const metricCards = [
+    {
+      key: 'total',
+      label: '总端口数',
+      value: totalPorts,
+      description: '全部检测端口',
+      icon: Database,
+    },
+    {
+      key: 'problem',
+      label: '异常端口',
+      value: problemCount,
+      description: 'Symbol Error > 0 的端口',
+      icon: AlertTriangle,
+    },
+    {
+      key: 'critical',
+      label: '严重 BER 问题',
+      value: criticalPorts,
+      description: 'BER 超过严重阈值',
+      icon: Shield,
+    },
+    {
+      key: 'warning',
+      label: '警告 BER 问题',
+      value: warningPorts,
+      description: 'BER 超过警告阈值',
+      icon: Activity,
+    },
+  ]
 
-  const totalRows = filteredRows.length
+  const severityChips = [
+    {
+      key: 'critical',
+      label: '严重',
+      color: '#b91c1c',
+      background: '#fee2e2',
+      count: criticalPorts,
+    },
+    {
+      key: 'warning',
+      label: '警告',
+      color: '#92400e',
+      background: '#fef3c7',
+      count: warningPorts,
+    },
+    {
+      key: 'info',
+      label: '正常/其他',
+      color: '#0f172a',
+      background: 'var(--bg-tertiary)',
+      count: totalPorts - criticalPorts - warningPorts,
+    },
+  ]
 
-  const totalPages = Math.max(1, Math.ceil(totalRows / ITEMS_PER_PAGE))
-  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE
-  const pageRows = filteredRows.slice(startIndex, startIndex + ITEMS_PER_PAGE)
+  const topProblems = problemRows.slice(0, 10)
+  const topCriticalRows = displayRows.filter(row => row.severity === 'critical').slice(0, 10)
+  const topWarningRows = displayRows.filter(row => row.severity === 'warning').slice(0, 10)
+
+  const tableRows = displayRows.map(row => ({
+    'Node GUID': row.nodeGuid,
+    LID: row.lid,
+    'Peer LID': row.peerLid,
+    'Port Number': row.portNumber,
+    'Node Name': row.nodeName,
+    'Attached To': row.attachedTo,
+    'Raw BER': row.rawBer,
+    'Effective BER': row.effectiveBer,
+    'Symbol BER': row.symbolBer,
+    'IBH Anomaly': row.ibhAnomaly && row.hasSymbolErrors ? row.ibhAnomaly : '—',
+    'Symbol Err': row.symbolErr,
+    'Effective Err': row.effectiveErr,
+    Severity: row.severity || 'info',
+  }))
 
   return (
-    <div style={{ padding: '16px' }}>
-      <div style={{ marginBottom: '16px' }}>
-        <h2 style={{ margin: 0, fontSize: '1.25rem', color: '#111827' }}>BER 测试结果</h2>
-        <p style={{ margin: '4px 0 0 0', color: '#6b7280' }}>
-          展示格式与 <code>/test_data/ber(1).csv</code> 一致，便于核对离线样例。
-        </p>
+    <div className="link-oscillation">
+      <div className="osc-metric-grid">
+        {metricCards.map(card => {
+          const Icon = card.icon
+          return (
+            <div key={card.key} className="osc-metric-card">
+              <div className="osc-metric-top">
+                <div className="osc-metric-icon">
+                  <Icon size={18} />
+                </div>
+                <span className="osc-metric-label">{card.label}</span>
+              </div>
+              <div className="osc-metric-value">{formatCount(card.value)}</div>
+              <p className="osc-metric-desc">{card.description}</p>
+            </div>
+          )
+        })}
       </div>
 
-      <div style={{ marginBottom: '12px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-        <div style={{ flex: 1, minWidth: '220px' }}>
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(event) => {
-              setSearchTerm(event.target.value)
-              setCurrentPage(1)
-            }}
-            placeholder="搜索 NodeGUID、端口、节点或 IBH Anomaly..."
-            style={{
-              width: '100%',
-              padding: '10px 12px',
-              border: '1px solid #d1d5db',
-              borderRadius: '6px',
-              fontSize: '0.95rem'
-            }}
-          />
-        </div>
-        <button
-          onClick={() => {
-            setShowProblemsOnly(prev => !prev)
-            setCurrentPage(1)
-          }}
-          style={{
-            padding: '10px 14px',
-            borderRadius: '6px',
-            border: '1px solid #d1d5db',
-            background: showProblemsOnly ? '#fef3c7' : '#f3f4f6',
-            color: '#374151',
-            cursor: 'pointer',
-            minWidth: '140px'
-          }}
-        >
-          {showProblemsOnly ? '显示全部端口' : '只看异常端口'}
-        </button>
-      </div>
-
-      <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', background: 'white' }}>
-          <thead>
-            <tr style={{ background: '#f3f4f6', borderBottom: '2px solid #e5e7eb' }}>
-              <th style={{ textAlign: 'left', padding: '10px' }}>Node GUID</th>
-              <th style={{ textAlign: 'left', padding: '10px' }}>LID</th>
-              <th style={{ textAlign: 'left', padding: '10px' }}>Peer LID</th>
-              <th style={{ textAlign: 'left', padding: '10px' }}>Port Number</th>
-              <th style={{ textAlign: 'left', padding: '10px' }}>Node Name</th>
-              <th style={{ textAlign: 'left', padding: '10px' }}>Attached To</th>
-              <th style={{ textAlign: 'left', padding: '10px' }}>Raw BER</th>
-              <th style={{ textAlign: 'left', padding: '10px' }}>Effective BER</th>
-              <th style={{ textAlign: 'left', padding: '10px' }}>Symbol BER</th>
-              <th style={{ textAlign: 'left', padding: '10px' }}>IBH Anomaly</th>
-              <th style={{ textAlign: 'left', padding: '10px' }}>Symbol Err</th>
-              <th style={{ textAlign: 'left', padding: '10px' }}>Effective Err</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pageRows.map((row) => (
-              <tr key={row.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
-                <td style={{ padding: '10px', fontFamily: 'monospace' }}>{row.nodeGuid}</td>
-                <td style={{ padding: '10px', fontFamily: 'monospace' }}>{row.lid}</td>
-                <td style={{ padding: '10px', fontFamily: 'monospace' }}>{row.peerLid}</td>
-                <td style={{ padding: '10px' }}>{row.portNumber}</td>
-                <td style={{ padding: '10px' }}>{row.nodeName}</td>
-                <td style={{ padding: '10px' }}>{row.attachedTo}</td>
-                <td style={{ padding: '10px', fontFamily: 'monospace' }}>{row.rawBer}</td>
-                <td style={{ padding: '10px', fontFamily: 'monospace' }}>{row.effectiveBer}</td>
-                <td style={{ padding: '10px', fontFamily: 'monospace' }}>{row.symbolBer}</td>
-                <td style={{ padding: '10px', color: row.ibhAnomaly ? '#dc2626' : '#4b5563' }}>
-                  {row.ibhAnomaly && row.hasSymbolErrors ? row.ibhAnomaly : '—'}
-                </td>
-                <td style={{ padding: '10px', fontFamily: 'monospace' }}>{row.symbolErr}</td>
-                <td style={{ padding: '10px', fontFamily: 'monospace' }}>{row.effectiveErr}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px' }}>
-        <span style={{ color: '#6b7280', fontSize: '0.9rem' }}>
-          共 {totalRows} 条记录（第 {currentPage} / {totalPages} 页）
-        </span>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button
-            onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
-            disabled={currentPage === 1}
-            style={{
-              padding: '6px 12px',
-              borderRadius: '4px',
-              border: 'none',
-              background: currentPage === 1 ? '#e5e7eb' : '#3b82f6',
-              color: currentPage === 1 ? '#9ca3af' : 'white',
-              cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
-            }}
+      <div className="osc-chip-row">
+        {severityChips.map(chip => (
+          <div
+            key={chip.key}
+            className="osc-chip"
+            style={{ background: chip.background, color: chip.color }}
           >
-            上一页
-          </button>
-          <button
-            onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
-            disabled={currentPage === totalPages}
-            style={{
-              padding: '6px 12px',
-              borderRadius: '4px',
-              border: 'none',
-              background: currentPage === totalPages ? '#e5e7eb' : '#3b82f6',
-              color: currentPage === totalPages ? '#9ca3af' : 'white',
-              cursor: currentPage === totalPages ? 'not-allowed' : 'pointer'
-            }}
-          >
-            下一页
-          </button>
+            <div className="osc-chip-label">{chip.label}</div>
+            <div className="osc-chip-value">{formatCount(chip.count)}</div>
+            <div className="osc-chip-sub">共 {formatCount(chip.count)} 个端口</div>
+          </div>
+        ))}
+      </div>
+
+      {topCriticalRows.length > 0 && (
+        <div className="osc-section">
+          <div className="osc-section-header">
+            <div>
+              <h3>严重 BER 问题预览 (Top {topCriticalRows.length})</h3>
+              <p>BER 超过严重阈值的端口,按严重程度排序,需立即处理。</p>
+            </div>
+            <span className="osc-section-tag">
+              展示 {topCriticalRows.length} / 总计 {formatCount(criticalPorts)}
+            </span>
+          </div>
+          <div className="osc-table-wrapper">
+            <table className="osc-table">
+              <thead>
+                <tr>
+                  <th>严重度</th>
+                  <th>Node Name</th>
+                  <th>Port</th>
+                  <th>Symbol BER</th>
+                  <th>Symbol Err</th>
+                  <th>IBH Anomaly</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topCriticalRows.map((row, idx) => (
+                  <tr key={`critical-${row.id}-${idx}`}>
+                    <td>
+                      <span className="osc-severity-dot severity-critical" />
+                      严重
+                    </td>
+                    <td>{row.nodeName}</td>
+                    <td>{row.portNumber}</td>
+                    <td style={{ fontFamily: 'monospace', color: '#dc2626', fontWeight: 'bold' }}>{row.symbolBer}</td>
+                    <td style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{row.symbolErr}</td>
+                    <td style={{ color: '#dc2626' }}>{row.ibhAnomaly || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
+      )}
+
+      {topWarningRows.length > 0 && (
+        <div className="osc-section">
+          <div className="osc-section-header">
+            <div>
+              <h3>警告 BER 问题预览 (Top {topWarningRows.length})</h3>
+              <p>BER 超过警告阈值的端口,建议持续监控。</p>
+            </div>
+            <span className="osc-section-tag">
+              展示 {topWarningRows.length} / 总计 {formatCount(warningPorts)}
+            </span>
+          </div>
+          <div className="osc-table-wrapper">
+            <table className="osc-table">
+              <thead>
+                <tr>
+                  <th>严重度</th>
+                  <th>Node Name</th>
+                  <th>Port</th>
+                  <th>Symbol BER</th>
+                  <th>Raw BER</th>
+                  <th>Effective BER</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topWarningRows.map((row, idx) => (
+                  <tr key={`warning-${row.id}-${idx}`}>
+                    <td>
+                      <span className="osc-severity-dot severity-warning" />
+                      警告
+                    </td>
+                    <td>{row.nodeName}</td>
+                    <td>{row.portNumber}</td>
+                    <td style={{ fontFamily: 'monospace', color: '#f59e0b' }}>{row.symbolBer}</td>
+                    <td style={{ fontFamily: 'monospace' }}>{row.rawBer}</td>
+                    <td style={{ fontFamily: 'monospace' }}>{row.effectiveBer}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <div className="osc-section">
+        <div className="osc-section-header">
+          <div>
+            <h3>完整 BER 数据表 (可搜索/排序)</h3>
+            <p>展示格式与原始 CSV 一致,便于核对离线样例。</p>
+          </div>
+          <span className="osc-section-tag">
+            展示 {totalPorts} / 总计 {formatCount(totalPorts)}
+          </span>
+        </div>
+        <DataTable
+          rows={tableRows}
+          totalRows={totalPorts}
+          searchPlaceholder="搜索 NodeGUID、端口、节点或 IBH Anomaly..."
+          pageSize={20}
+          preferredColumns={[
+            'Severity',
+            'Node Name',
+            'Port Number',
+            'Symbol BER',
+            'Symbol Err',
+            'IBH Anomaly',
+            'Raw BER',
+            'Effective BER',
+            'Node GUID',
+            'LID',
+          ]}
+          defaultSortKey="Symbol Err"
+        />
       </div>
     </div>
   )
