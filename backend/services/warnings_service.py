@@ -89,23 +89,6 @@ WARNING_TABLE_CONFIG = {
         },
         "default_severity": "warning",
     },
-    # ===== Link State Warnings =====
-    "WARNINGS_LINK_DOWN": {
-        "category": "link",
-        "events": {
-            "LINK_DOWN": {"severity": "critical", "title": "链路断开"},
-            "LINK_FLAPPING": {"severity": "warning", "title": "链路不稳定"},
-        },
-        "default_severity": "critical",
-    },
-    "WARNINGS_LINK_SPEED_MISMATCH": {
-        "category": "link",
-        "events": {
-            "SPEED_MISMATCH": {"severity": "warning", "title": "链路速度不匹配"},
-            "WIDTH_MISMATCH": {"severity": "warning", "title": "链路宽度不匹配"},
-        },
-        "default_severity": "warning",
-    },
 }
 
 # PHY_DB*_RETRIEVING tables - dynamic configuration for all PHY database collection failures
@@ -114,7 +97,6 @@ PHY_DB_RETRIEVING_TABLES = [
     "WARNINGS_PHY_DB6_RETRIEVING",
     "WARNINGS_PHY_DB7_RETRIEVING",
     "WARNINGS_PHY_DB18_RETRIEVING",
-    "WARNINGS_PHY_DB19_RETRIEVING",
     "WARNINGS_PHY_DB20_RETRIEVING",
     "WARNINGS_PHY_DB23_RETRIEVING",
     "WARNINGS_PHY_DB27_RETRIEVING",
@@ -131,10 +113,6 @@ PHY_DB_RETRIEVING_TABLES = [
 
 # P_DB*_RETRIEVING tables - performance database collection failures
 P_DB_RETRIEVING_TABLES = [
-    "WARNINGS_P_DB1_RETRIEVING",
-    "WARNINGS_P_DB2_RETRIEVING",
-    "WARNINGS_P_DB4_RETRIEVING",
-    "WARNINGS_P_DB5_RETRIEVING",
     "WARNINGS_P_DB6_RETRIEVING",
     "WARNINGS_P_DB7_RETRIEVING",
     "WARNINGS_P_DB8_RETRIEVING",

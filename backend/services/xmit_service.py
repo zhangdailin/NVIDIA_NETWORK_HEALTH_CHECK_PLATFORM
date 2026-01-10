@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import logging
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 
 from .anomalies import AnomlyType, IBH_ANOMALY_TBL_KEY
-from .ibdiagnet import read_index_table, read_table
+from .dataset_inventory import DatasetInventory
 from .topology_lookup import TopologyLookup
 
 logger = logging.getLogger(__name__)
@@ -87,15 +87,16 @@ SPEED_PRIORITY = [
 class XmitAnalysis:
     data: List[dict]
     anomalies: pd.DataFrame
+    summary: Dict[str, object] = field(default_factory=dict)
 
 
 class XmitService:
     """Computes congestion insights similar to ib_analysis.xmit."""
 
-    def __init__(self, dataset_root: Path):
+    def __init__(self, dataset_root: Path, dataset_inventory: DatasetInventory | None = None):
         self.dataset_root = dataset_root
+        self._inventory = dataset_inventory or DatasetInventory(dataset_root)
         self._df: pd.DataFrame | None = None
-        self._topology: TopologyLookup | None = None
         self._ports_df: pd.DataFrame | None = None
         self._credit_df: pd.DataFrame | None = None
 
@@ -109,19 +110,18 @@ class XmitService:
     def run(self) -> XmitAnalysis:
         df = self._load_dataframe()
         anomalies = self._build_anomalies(df)
-        return XmitAnalysis(data=df.to_dict(orient="records"), anomalies=anomalies)
+        summary = self._build_summary(df)
+        return XmitAnalysis(data=df.to_dict(orient="records"), anomalies=anomalies, summary=summary)
 
     def _load_dataframe(self) -> pd.DataFrame:
         if self._df is not None:
             return self._df
-        db_csv = self._find_db_csv()
-        index_table = read_index_table(db_csv)
-        df = read_table(db_csv, XMIT_TABLE, index_table)
+        df = self._inventory.read_table(XMIT_TABLE)
         df["NodeGUID"] = df.apply(self._remove_redundant_zero, axis=1)
         df["PortXmitWaitTotal"] = pd.to_numeric(df.get("PortXmitWaitExt", 0), errors="coerce").fillna(0)
         df["PortXmitDataTotal"] = pd.to_numeric(df.get("PortXmitDataExtended", 0), errors="coerce").fillna(0)
         tick_to_seconds = 4e-9
-        duration = self._extract_duration(db_csv)
+        duration = self._extract_duration(self._inventory.db_csv)
         df["WaitSeconds"] = df["PortXmitWaitTotal"] * tick_to_seconds
         # Safe duration conversion with validation
         try:
@@ -150,12 +150,6 @@ class XmitService:
         df = df[existing].copy()
         self._df = df
         return df
-
-    def _find_db_csv(self) -> Path:
-        matches = sorted(self.dataset_root.glob("*.db_csv"))
-        if not matches:
-            raise FileNotFoundError(f"No .db_csv files under {self.dataset_root}")
-        return matches[0]
 
     @staticmethod
     def _remove_redundant_zero(row) -> str:
@@ -218,6 +212,7 @@ class XmitService:
             self._build_counter_anomaly(df, "FECNCount", AnomlyType.IBH_FECN_ALERT),
             self._build_counter_anomaly(df, "BECNCount", AnomlyType.IBH_BECN_ALERT),
             self._build_ratio_anomaly(df, "XmitCongestionPct", AnomlyType.IBH_XMIT_TIME_CONG),
+            self._build_ratio_anomaly(df, "WaitRatioPct", AnomlyType.IBH_HIGH_XMIT_WAIT),
             self._build_link_downgrade_anomaly(df),
             self._build_credit_watchdog_anomaly(df),
         ]
@@ -363,15 +358,76 @@ class XmitService:
         )
         return payload[IBH_ANOMALY_TBL_KEY + [str(AnomlyType.IBH_CREDIT_WATCHDOG)]]
 
+    def _build_summary(self, df: pd.DataFrame) -> Dict[str, object]:
+        summary = {
+            "total_ports": int(len(df)),
+            "severe_ports": 0,
+            "warning_ports": 0,
+            "fecn_ports": 0,
+            "becn_ports": 0,
+            "avg_wait_ratio_pct": 0.0,
+            "max_wait_ratio_pct": 0.0,
+            "avg_congestion_pct": 0.0,
+            "top_waiters": [],
+        }
+        if df.empty:
+            return summary
+
+        def _numeric_series(column: str) -> pd.Series:
+            if column in df.columns:
+                return pd.to_numeric(df[column], errors="coerce").fillna(0.0)
+            return pd.Series(0.0, index=df.index)
+
+        ratio_series = _numeric_series("WaitRatioPct")
+        congestion_series = _numeric_series("XmitCongestionPct")
+        wait_seconds = _numeric_series("WaitSeconds")
+
+        severe_mask = (ratio_series >= 5.0) | (congestion_series >= 5.0)
+        warning_mask = (~severe_mask) & (
+            (ratio_series >= 1.0)
+            | (congestion_series >= 1.0)
+            | (wait_seconds > 0.0)
+        )
+
+        summary["severe_ports"] = int(severe_mask.sum())
+        summary["warning_ports"] = int(warning_mask.sum())
+        summary["avg_wait_ratio_pct"] = float(ratio_series.mean())
+        summary["max_wait_ratio_pct"] = float(ratio_series.max())
+        summary["avg_congestion_pct"] = float(congestion_series.mean())
+
+        fecn = _numeric_series("FECNCount")
+        becn = _numeric_series("BECNCount")
+        summary["fecn_ports"] = int((fecn > 0).sum())
+        summary["becn_ports"] = int((becn > 0).sum())
+
+        credit = _numeric_series("CreditWatchdogTimeout")
+        summary["credit_watchdog_ports"] = int((credit > 0).sum())
+
+        link_down = _numeric_series("LinkDownedCounter") + _numeric_series("LinkDownedCounterExt")
+        summary["link_down_ports"] = int((link_down > 0).sum())
+        summary["link_down_events"] = float(link_down.sum())
+
+        df_top = df.assign(__ratio=ratio_series).sort_values("__ratio", ascending=False).head(5)
+        summary["top_waiters"] = [
+            {
+                "node_name": row.get("Node Name") or row.get("NodeName") or row.get("NodeGUID"),
+                "node_guid": row.get("NodeGUID"),
+                "port_number": row.get("PortNumber"),
+                "wait_ratio_pct": float(row.get("__ratio", 0.0) or 0.0),
+                "wait_seconds": float(row.get("WaitSeconds") or 0.0),
+                "xmit_congestion_pct": float(row.get("XmitCongestionPct") or 0.0),
+            }
+            for _, row in df_top.iterrows()
+        ]
+        return summary
+
     def _ports_table(self) -> pd.DataFrame:
         if self._ports_df is not None:
             return self._ports_df
-        db_csv = self._find_db_csv()
-        index_table = read_index_table(db_csv)
-        if "PORTS" not in index_table.index:
+        if not self._inventory.table_exists("PORTS"):
             self._ports_df = pd.DataFrame()
             return self._ports_df
-        ports = read_table(db_csv, "PORTS", index_table)
+        ports = self._inventory.read_table("PORTS")
         ports.rename(columns={"NodeGuid": "NodeGUID", "PortNum": "PortNumber"}, inplace=True)
         ports["NodeGUID"] = ports["NodeGUID"].apply(self._remove_redundant_zero)
         self._ports_df = ports
@@ -380,12 +436,10 @@ class XmitService:
     def _credit_watchdog_table(self) -> pd.DataFrame:
         if self._credit_df is not None:
             return self._credit_df
-        db_csv = self._find_db_csv()
-        index_table = read_index_table(db_csv)
-        if CREDIT_WATCHDOG_TABLE not in index_table.index:
+        if not self._inventory.table_exists(CREDIT_WATCHDOG_TABLE):
             self._credit_df = pd.DataFrame()
             return self._credit_df
-        df = read_table(db_csv, CREDIT_WATCHDOG_TABLE, index_table)
+        df = self._inventory.read_table(CREDIT_WATCHDOG_TABLE)
         if df.empty:
             self._credit_df = pd.DataFrame()
             return self._credit_df
@@ -420,6 +474,9 @@ class XmitService:
                 return (priority, label)
         return (None, None)
 
+    def _find_db_csv(self) -> Path:
+        return self._inventory.db_csv
+
     @staticmethod
     def _decode_port_state(value: object) -> str:
         try:
@@ -437,9 +494,7 @@ class XmitService:
         return PORT_PHY_STATE_MAP.get(code, str(code))
 
     def _topology_lookup(self) -> TopologyLookup:
-        if self._topology is None:
-            self._topology = TopologyLookup(self.dataset_root)
-        return self._topology
+        return self._inventory.topology
 
     def _annotate_neighbor_state(self, df: pd.DataFrame) -> pd.DataFrame:
         if "Attached To GUID" not in df.columns:

@@ -1,7 +1,14 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm run build)"
+      "Bash(python -m pip install:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(python -c:*)",
+      "Bash(npm install @reduxjs/toolkit react-redux react-router-dom lucide-react axios)",
+      "Bash(dir:*)",
+      "Bash(npm run build)",
+      "Bash(npm install:*)",
+      "Bash(npx tailwindcss init:*)"
     ]
   }
 }

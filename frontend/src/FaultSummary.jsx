@@ -332,44 +332,7 @@ function FaultSummary({ analysisData }) {
       })
     }
 
-    // 10. Port Health Issues
-    if (analysisData.port_health_data && Array.isArray(analysisData.port_health_data)) {
-      analysisData.port_health_data.forEach(row => {
-        const parityErrors = toNumber(row.TxParityErrors)
-        const icrcErrors = toNumber(row.RxICRCErrors)
-
-        if (parityErrors > 0) {
-          addFault('critical', 'BER_CRITICAL', {
-            nodeName: row['Node Name'] || row.NodeName || 'Unknown',
-            nodeGuid: row.NodeGUID || row['Node GUID'] || 'N/A',
-            portNumber: row.PortNumber || row['Port Number'] || 'N/A',
-            currentValue: `${parityErrors}个奇偶校验错误`,
-            threshold: '0',
-            deviation: `+${parityErrors}`,
-            kbType: 'BER_CRITICAL',
-            details: {
-              icrcErrors: icrcErrors || 0,
-              unhealthyReason: row.UnhealthyReason || 'N/A'
-            }
-          })
-        } else if (icrcErrors > 0) {
-          addFault('warning', 'BER_WARNING', {
-            nodeName: row['Node Name'] || row.NodeName || 'Unknown',
-            nodeGuid: row.NodeGUID || row['Node GUID'] || 'N/A',
-            portNumber: row.PortNumber || row['Port Number'] || 'N/A',
-            currentValue: `${icrcErrors}个ICRC错误`,
-            threshold: '0',
-            deviation: `+${icrcErrors}`,
-            kbType: 'BER_WARNING',
-            details: {
-              fecMode: row.FECMode || 'N/A'
-            }
-          })
-        }
-      })
-    }
-
-    // 11. PCIe Performance Issues
+    // 10. PCIe Performance Issues
     if (analysisData.pci_performance_data && Array.isArray(analysisData.pci_performance_data)) {
       analysisData.pci_performance_data.forEach(row => {
         const isDegraded = row.IsDegraded === true || row.IsDegraded === 'true'

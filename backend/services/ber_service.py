@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import logging
 import math
-import os
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -25,6 +25,8 @@ WARNING_SEVERITY = {
     "BER_RS_FEC_HIGH_ERRORS": "warning",
     "BER_NO_THRESHOLD_IS_SUPPORTED": "info",
 }
+SYMBOL_BER_SENTINEL_TEXT = "1.50E-254"
+SYMBOL_BER_SENTINEL_VALUE = 1.5e-254
 
 
 @dataclass
@@ -177,14 +179,16 @@ class BerService:
 
         index_table = self._get_index_table()
         pm_df = pd.DataFrame()
-        for table in ("PERFQUERY_EXT_ERRORS", "PM"):
-            if table in index_table.index:
-                try:
-                    pm_df = read_table(db_csv, table, index_table)
-                    if not pm_df.empty:
-                        break
-                except Exception:  # pragma: no cover - corrupt table should not crash
-                    continue
+        candidate_tables = ("PM_DELTA", "PM_INFO", "PERFQUERY_EXT_ERRORS", "PM")
+        for table in candidate_tables:
+            if table not in index_table.index:
+                continue
+            try:
+                pm_df = read_table(db_csv, table, index_table)
+                if not pm_df.empty:
+                    break
+            except Exception:  # pragma: no cover - corrupt table should not crash
+                continue
         if pm_df.empty:
             self._pm_counters_df = pd.DataFrame()
             return self._pm_counters_df
@@ -194,11 +198,26 @@ class BerService:
             "PortNum": "PortNumber",
         }
         pm_df = pm_df.rename(columns=rename_map)
+        required_cols = {"NodeGUID", "PortNumber"}
+        if not required_cols.issubset(pm_df.columns):
+            self._pm_counters_df = pd.DataFrame()
+            return self._pm_counters_df
+
         keep_cols = ["NodeGUID", "PortNumber"]
+        has_symbol_counter = False
         for column in ("SymbolErrorCounter", "SymbolErrorCounterExt"):
             if column in pm_df.columns:
                 keep_cols.append(column)
-        pm_df = pm_df[keep_cols].drop_duplicates(subset=["NodeGUID", "PortNumber"], keep="last")
+                has_symbol_counter = True
+        if not has_symbol_counter:
+            self._pm_counters_df = pd.DataFrame()
+            return self._pm_counters_df
+
+        pm_df = (
+            pm_df[keep_cols]
+            .drop_duplicates(subset=["NodeGUID", "PortNumber"], keep="last")
+            .copy()
+        )
         pm_df["NodeGUID"] = pm_df["NodeGUID"].astype(str).apply(self._normalize_guid_text)
         self._pm_counters_df = pm_df
         return self._pm_counters_df
@@ -212,22 +231,23 @@ class BerService:
             df["SymbolErrorCounterExt"] = 0
             return df
         merged = df.merge(pm_df, how="left", on=["NodeGUID", "PortNumber"])
+
+        # Use vectorized operations instead of apply for better performance
         for column in ("SymbolErrorCounter", "SymbolErrorCounterExt"):
-            merged[column] = pd.to_numeric(merged.get(column), errors="coerce").fillna(0).astype(int)
+            if column in merged.columns:
+                merged[column] = pd.to_numeric(merged[column], errors="coerce").fillna(0).clip(lower=0).astype("int64")
+            else:
+                merged[column] = 0
+
+        if "Symbol Err" not in merged.columns:
+            merged["Symbol Err"] = 0
+        merged["Symbol Err"] = pd.to_numeric(merged["Symbol Err"], errors="coerce").fillna(0).astype("int64")
         return merged
 
     @staticmethod
-    def _remove_redundant_zero(row) -> str:
-        """Remove redundant zeros from GUID. Can handle both dict/row and string."""
-        # Handle when called with a string value directly (from Series.apply)
-        if isinstance(row, str):
-            guid = row
-        # Handle when called with a dict/row object
-        elif isinstance(row, dict) or hasattr(row, "get"):
-            guid = str(row.get("NodeGUID", ""))
-        else:
-            guid = str(row)
-
+    @lru_cache(maxsize=10000)
+    def _cached_remove_redundant_zero(guid: str) -> str:
+        """Cached version of _remove_redundant_zero to handle repeated values."""
         if guid.startswith("0x"):
             try:
                 return hex(int(guid, 16))
@@ -235,6 +255,20 @@ class BerService:
                 logger.warning(f"Invalid hex GUID format: {guid}")
                 return guid
         return guid
+
+    @staticmethod
+    def _remove_redundant_zero(row) -> str:
+        """Remove redundant zeros from GUID. Can handle both dict/row and string."""
+        # Handle when called with a string value directly (from Series.apply)
+        if isinstance(row, str):
+            return BerService._cached_remove_redundant_zero(row)
+        # Handle when called with a dict/row object
+        elif isinstance(row, dict) or hasattr(row, "get"):
+            guid = str(row.get("NodeGUID", ""))
+            return BerService._cached_remove_redundant_zero(guid)
+        else:
+            guid = str(row)
+            return BerService._cached_remove_redundant_zero(guid)
 
     def _annotate_symbol_ber(self, df: pd.DataFrame) -> None:
         if df.empty:
@@ -250,70 +284,56 @@ class BerService:
             return math.pow(10, log_value)
 
         df["SymbolBERValue"] = log_series.apply(to_value)
-        critical_threshold = float(os.environ.get("IBA_BER_TH", "1e-12"))
-        warning_threshold = float(os.environ.get("IBA_BER_WARN_TH", "1e-15"))
-        threshold_log = math.log10(critical_threshold)
-        warning_log = math.log10(min(critical_threshold, warning_threshold))
+        df["SymbolBERThreshold"] = SYMBOL_BER_SENTINEL_VALUE
 
-        def classify(log_value):
-            if pd.isna(log_value):
-                return "unknown"
-            if log_value > threshold_log:
-                return "critical"
-            if log_value > warning_log:
-                return "warning"
-            return "normal"
+        def requires_warning(row: pd.Series) -> bool:
+            text_value = str(row.get("Symbol BER", "") or "").strip()
+            numeric_value: Optional[float] = None
+            if text_value:
+                try:
+                    numeric_value = float(text_value)
+                except (TypeError, ValueError):
+                    numeric_value = None
+                if numeric_value is None:
+                    return text_value.upper() != SYMBOL_BER_SENTINEL_TEXT
+            if numeric_value is None:
+                numeric_value = row.get("SymbolBERValue")
+            if numeric_value is None or pd.isna(numeric_value):
+                return False
+            return not math.isclose(
+                numeric_value,
+                SYMBOL_BER_SENTINEL_VALUE,
+                rel_tol=0.0,
+                abs_tol=1e-320,
+            )
 
-        df["SymbolBERSeverity"] = log_series.apply(classify)
-        df["SymbolBERThreshold"] = critical_threshold
+        df["SymbolBERSeverity"] = df.apply(
+            lambda row: "warning" if requires_warning(row) else "normal",
+            axis=1,
+        )
 
-        self._annotate_raw_effective_ber(df, threshold_log, warning_log)
+        self._annotate_raw_effective_ber(df)
 
-    def _annotate_raw_effective_ber(self, df: pd.DataFrame, critical_log: float, warning_log: float) -> None:
+    def _annotate_raw_effective_ber(self, df: pd.DataFrame) -> None:
         if df.empty:
             return
 
-        fb_min = int(os.environ.get("IBA_BER_FALLBACK_MIN", "1024"))
-        min_symbol_log = float(os.environ.get("IBA_BER_SYMBOL_VALID_MIN_LOG10", "-60"))
-        symbol_err = pd.to_numeric(df.get("Symbol Err"), errors="coerce").fillna(0).astype(int)
-        effective_err = pd.to_numeric(df.get("Effective Err"), errors="coerce").fillna(0).astype(int)
-        pm_symbol = pd.to_numeric(df.get("SymbolErrorCounter"), errors="coerce").fillna(0).astype(int)
-        pm_symbol_ext = pd.to_numeric(df.get("SymbolErrorCounterExt"), errors="coerce").fillna(0).astype(int)
+        symbol_err = (
+            pd.to_numeric(df.get("Symbol Err"), errors="coerce").fillna(0).astype("int64")
+        )
+        effective_err = (
+            pd.to_numeric(df.get("Effective Err"), errors="coerce").fillna(0).astype("int64")
+        )
         df["Symbol Err"] = symbol_err
         df["Effective Err"] = effective_err
-        df["_TotalSymbolErrors"] = symbol_err + pm_symbol + pm_symbol_ext
-
-        def log_meets(value, threshold):
-            return value is not None and pd.notna(value) and float(value) >= threshold
 
         def classify_row(row):
             severity = row.get("SymbolBERSeverity", "normal") or "normal"
-            total_errors = int(row.get("_TotalSymbolErrors", 0) or 0)
-            fallback_errors = int(row.get("Effective Err", 0) or 0)
-            err_gate = total_errors if total_errors > 0 else fallback_errors
-            if err_gate < fb_min:
-                return severity
-
-            sym_log = row.get("Log10 Symbol BER")
-            eff_log = row.get("Log10 Effective BER")
-            raw_log = row.get("Log10 Raw BER")
-
-            symbol_log_valid = sym_log is not None and pd.notna(sym_log) and float(sym_log) > min_symbol_log
-
-            if symbol_log_valid:
-                if log_meets(sym_log, critical_log):
-                    return self._max_severity(severity, "critical")
-                if log_meets(sym_log, warning_log):
-                    severity = self._max_severity(severity, "warning")
-            else:
-                if log_meets(eff_log, critical_log):
-                    return self._max_severity(severity, "critical")
-                if log_meets(eff_log, warning_log):
-                    severity = self._max_severity(severity, "warning")
-                elif log_meets(raw_log, critical_log):
-                    return self._max_severity(severity, "critical")
-                elif log_meets(raw_log, warning_log):
-                    severity = self._max_severity(severity, "warning")
+            symbol_count = int(row.get("Symbol Err", 0) or 0)
+            if symbol_count > 0:
+                return self._max_severity(severity, "critical")
+            if row.get("BerWarning"):
+                return self._max_severity(severity, "warning")
             return severity
 
         df["SymbolBERSeverity"] = df.apply(classify_row, axis=1)
@@ -559,7 +579,9 @@ class BerService:
             return 0
 
     @staticmethod
-    def _normalize_guid_text(value: str) -> str:
+    @lru_cache(maxsize=10000)
+    def _cached_normalize_guid_text(value: str) -> str:
+        """Cached version of _normalize_guid_text."""
         text = value.strip()
         if text.lower().startswith("0x"):
             return text.lower()
@@ -568,6 +590,10 @@ class BerService:
             return f"0x{text.lower()}"
         except ValueError:
             return text
+
+    @staticmethod
+    def _normalize_guid_text(value: str) -> str:
+        return BerService._cached_normalize_guid_text(value)
 
     @staticmethod
     def _parse_ber_string(value: object) -> Optional[float]:

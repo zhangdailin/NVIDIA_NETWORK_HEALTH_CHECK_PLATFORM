@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
-import { Upload, FileText, Activity, Server, AlertTriangle, ShieldCheck, Cpu, CheckCircle, XCircle, AlertCircle, Fan as FanIcon, Clock3, BookOpen, ChevronDown, ChevronUp, Thermometer, Zap, Network, GitBranch, Link, Gauge, Layers, Settings, Database, Cpu as ChipIcon, BarChart2, Key, Box, Info, PlugZap, Shuffle, BrainCircuit, Shield, Radio, Users, BarChart3, HardDrive, Router, ThermometerSun, Timer } from 'lucide-react'
+import { Upload, FileText, Activity, Server, AlertTriangle, ShieldCheck, Cpu, CheckCircle, XCircle, AlertCircle, Fan as FanIcon, Clock3, BookOpen, ChevronDown, ChevronUp, Thermometer, Zap, Network, GitBranch, Layers, Settings, Database, Cpu as ChipIcon, BarChart2, Key, Box, Info, PlugZap, Shuffle, BrainCircuit, Shield, Radio, Users, BarChart3, HardDrive, Router, ThermometerSun, Timer } from 'lucide-react'
 import {
   ERROR_KNOWLEDGE_BASE,
   getErrorExplanation,
@@ -13,9 +13,11 @@ import FaultSummary from './FaultSummary'
 import CableAnalysis from './CableAnalysis'
 import BERAnalysis from './BERAnalysis'
 import CongestionAnalysis from './CongestionAnalysis'
+import LinkOscillation from './LinkOscillation'
 import HealthCheckBoard from './HealthCheckBoard'
 import { HEALTH_CHECK_GROUPS, HEALTH_CHECK_DEFINITIONS } from './healthCheckDefinitions'
 import './App.css'
+import DataTable from './DataTable'
 
 // Configuration - use relative URL for proxy support
 const normalizeBaseUrl = (value = '') => value.replace(/\/+$/, '')
@@ -37,7 +39,6 @@ const resolveMaxFileSize = () => {
 }
 
 const MAX_FILE_SIZE = resolveMaxFileSize()
-const TABLE_PAGE_SIZE = 100
 const MAX_TABLE_ROWS = 500
 const FILE_SIZE_MB = 500
 const FILE_SIZE_BYTES = FILE_SIZE_MB * 1024 * 1024
@@ -66,12 +67,46 @@ const hasAlarmFlag = (value) => {
   }
 }
 
+const RECENT_REBOOT_THRESHOLD_HOURS = 1
+
+const extractHostLabel = (raw = '') => {
+  if (!raw) return 'Unknown'
+  const withoutSlash = raw.split('/')[0] || raw
+  const hcaSplitIndex = withoutSlash.indexOf(' HCA')
+  if (hcaSplitIndex >= 0) {
+    return withoutSlash.slice(0, hcaSplitIndex).trim() || withoutSlash.trim()
+  }
+  return withoutSlash.trim() || raw
+}
+
+const buildFrequentRebootHosts = (rows = []) => {
+  const hosts = new Map()
+  ensureArray(rows).forEach(row => {
+    const flagged = row?.RecentlyRebooted ?? row?.recentlyRebooted
+    if (!flagged) return
+    const nodeName = row['Node Name'] || row.NodeName || row.NodeGUID || 'Unknown Node'
+    const hostLabel = extractHostLabel(nodeName)
+    const uptime = row['Up Time'] || row.UpTime || row.HWInfo_UpTime || 'N/A'
+    const seconds = Number(row?.UptimeSeconds ?? row?.uptimeSeconds ?? 0)
+    const entry = hosts.get(hostLabel) || { host: hostLabel, nodes: [], minSeconds: Number.isFinite(seconds) ? seconds : Infinity }
+    entry.nodes.push({
+      nodeName,
+      guid: row.NodeGUID,
+      uptime,
+      seconds,
+    })
+    if (Number.isFinite(seconds)) {
+      entry.minSeconds = Math.min(entry.minSeconds, seconds)
+    }
+    hosts.set(hostLabel, entry)
+  })
+  return Array.from(hosts.values()).sort((a, b) => (a.minSeconds || Infinity) - (b.minSeconds || Infinity))
+}
+
 const TAB_ICON_MAP = {
   overview: Activity,
   cable: Server,
-  cable_enhanced: PlugZap,
-  port_health: Gauge,
-  links: Link,
+  link_oscillation: AlertTriangle,
   xmit: AlertTriangle,
   latency: Clock3,
   per_lane_performance: Layers,
@@ -979,94 +1014,6 @@ const evaluateRoutingHealth = (rows = []) => {
   }
 }
 
-const evaluatePortHealth = (rows = []) => {
-  const safeRows = ensureArray(rows)
-  let icrcErrorCount = 0
-  let parityErrorCount = 0
-  let unhealthyCount = 0
-   let linkDownPortCount = 0
-   let linkDownEvents = 0
-   let linkRecoveryPortCount = 0
-   let linkRecoveryEvents = 0
-
-  safeRows.forEach(row => {
-    if (toNumber(row.RxICRCErrors) > 0) icrcErrorCount++
-    if (toNumber(row.TxParityErrors) > 0) parityErrorCount++
-    if (toNumber(row.UnhealthyReason) > 0) unhealthyCount++
-    const downEvents = toNumber(
-      row.LinkDownEvents ?? row.LinkDownedCounter ?? row.LinkDownedCounterExt ?? row.link_down_events
-    )
-    if (downEvents > 0) {
-      linkDownPortCount++
-      linkDownEvents += downEvents
-    }
-    const recoveryEvents = toNumber(
-      row.LinkRecoveryEvents ?? row.LinkErrorRecoveryCounter ?? row.LinkErrorRecoveryCounterExt ?? row.link_recovery_events
-    )
-    if (recoveryEvents > 0) {
-      linkRecoveryPortCount++
-      linkRecoveryEvents += recoveryEvents
-    }
-  })
-
-  const problems = []
-  if (linkDownPortCount > 0) {
-    problems.push({
-      severity: 'critical',
-      summary: `${linkDownPortCount} 个端口出现 LinkDown (共 ${linkDownEvents} 次)`,
-      kbType: 'XMIT_LINK_DOWN_COUNTER',
-    })
-  }
-  if (linkRecoveryPortCount > 0) {
-    problems.push({
-      severity: linkDownPortCount > 0 ? 'critical' : 'warning',
-      summary: `${linkRecoveryPortCount} 个端口发生链路恢复事件 (共 ${linkRecoveryEvents} 次)`,
-      kbType: 'XMIT_LINK_RECOVERY',
-    })
-  }
-  if (parityErrorCount > 0) {
-    problems.push({
-      severity: 'critical',
-      summary: `${parityErrorCount} 个端口有奇偶校验错误，可能存在硬件故障`,
-      kbType: 'BER_CRITICAL'
-    })
-  }
-  if (unhealthyCount > 0) {
-    problems.push({
-      severity: 'critical',
-      summary: `${unhealthyCount} 个端口被标记为不健康状态`,
-      kbType: 'XMIT_LINK_DOWN_COUNTER'
-    })
-  }
-  if (icrcErrorCount > 0) {
-    problems.push({
-      severity: 'warning',
-      summary: `${icrcErrorCount} 个端口有ICRC错误，数据完整性受影响`,
-      kbType: 'BER_WARNING'
-    })
-  }
-
-  return {
-    problems,
-    stats: {
-      total: safeRows.length,
-      icrcErrorCount,
-      parityErrorCount,
-      unhealthyCount,
-      linkDownPortCount,
-      linkDownEvents,
-      linkRecoveryPortCount,
-      linkRecoveryEvents,
-      severity:
-        parityErrorCount > 0 ||
-        unhealthyCount > 0 ||
-        linkDownPortCount > 0
-          ? 'critical'
-          : (icrcErrorCount > 0 || linkRecoveryPortCount > 0 ? 'warning' : 'info'),
-    }
-  }
-}
-
 const summarizeN2NSecurity = (summary = {}, rows = []) => {
   const safeSummary = summary || {}
   const totalNodes = safeSummary.total_nodes ?? ensureArray(rows).length
@@ -1312,112 +1259,13 @@ function IssuesList({ issues }) {
   )
 }
 
-// PaginatedTable component - moved outside to prevent re-creation on every render
-function PaginatedTable({ rows, totalRows, emptyDebug }) {
-  const data = ensureArray(rows)
-  const [page, setPage] = useState(1)
-
-  useEffect(() => {
-    setPage(1)
-  }, [rows])
-
-  if (!data.length) {
-    if (emptyDebug?.stderr || emptyDebug?.stdout) {
-      return (
-        <div>
-          <p>No structured data available.</p>
-          {emptyDebug.stderr && (
-            <div style={{ marginTop: '20px' }}>
-              <h4>Debug Error Log:</h4>
-              <pre style={{ color: 'red' }}>{emptyDebug.stderr}</pre>
-            </div>
-          )}
-          {emptyDebug.stdout && (
-            <div style={{ marginTop: '20px' }}>
-              <h4>Debug Output Log:</h4>
-              <pre>{emptyDebug.stdout}</pre>
-            </div>
-          )}
-        </div>
-      )
-    }
-    return <p>No data available.</p>
-  }
-
-  const columns = Object.keys(data[0] || {})
-  if (columns.length === 0) {
-    return <p>No structured columns available.</p>
-  }
-
-  const totalPreviewRows = data.length
-  const pageSize = TABLE_PAGE_SIZE
-  const totalPages = Math.max(1, Math.ceil(totalPreviewRows / pageSize))
-  const currentPage = Math.min(page, totalPages)
-  const startIndex = (currentPage - 1) * pageSize
-  const endIndex = Math.min(startIndex + pageSize, totalPreviewRows)
-  const displayRows = data.slice(startIndex, endIndex)
-  const totalRecords = Number.isFinite(totalRows) && totalRows > 0 ? totalRows : totalPreviewRows
-  const previewTrimmed = totalRecords > totalPreviewRows
-
-  const infoParts = [`Showing rows ${startIndex + 1}-${endIndex} of ${totalRecords} rows.`]
-  if (previewTrimmed) {
-    infoParts.push(`Only ${totalPreviewRows} rows are available in this preview.`)
-  }
-
-  return (
-    <div className="table-container">
-      <table>
-        <thead>
-          <tr>
-            {columns.map(col => <th key={col}>{col}</th>)}
-          </tr>
-        </thead>
-        <tbody>
-          {displayRows.map((row, i) => (
-            <tr key={`${currentPage}-${i}`}>
-              {columns.map(col => (
-                <td key={col}>
-                  {typeof row[col] === 'object' ? JSON.stringify(row[col]) : row[col]}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', flexWrap: 'wrap', gap: '8px' }}>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button
-            style={{ padding: '6px 12px', borderRadius: '4px', border: '1px solid #1f2937', background: '#0f172a', color: '#e2e8f0', cursor: 'pointer' }}
-            disabled={currentPage === 1}
-            onClick={() => setPage(Math.max(1, currentPage - 1))}
-          >
-            Previous
-          </button>
-          <button
-            style={{ padding: '6px 12px', borderRadius: '4px', border: '1px solid #1f2937', background: '#0f172a', color: '#e2e8f0', cursor: 'pointer' }}
-            disabled={currentPage === totalPages}
-            onClick={() => setPage(Math.min(totalPages, currentPage + 1))}
-          >
-            Next
-          </button>
-        </div>
-        <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
-          Page {currentPage} / {totalPages}
-        </span>
-      </div>
-      <p style={{ marginTop: '10px', fontSize: '0.85rem', color: '#94a3b8' }}>
-        {infoParts.join(' ')} Backend previews include anomalies only. Download the uploaded ibdiagnet archive for the complete dataset.
-      </p>
-    </div>
-  )
-}
-
 function App() {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
   const [activeTab, setActiveTab] = useState('overview')
   const [uploadProgress, setUploadProgress] = useState(0)
+  const [navCollapsedGroups, setNavCollapsedGroups] = useState({})
 
   const validateFile = (file, allowedExtensions, maxSize = MAX_FILE_SIZE) => {
     // Check file size
@@ -1552,6 +1400,7 @@ function App() {
       data,
       cable_data,
       xmit_data,
+      link_oscillation_data,
       ber_data,
       hca_data,
       fan_data,
@@ -1560,8 +1409,6 @@ function App() {
       power_data,
       switch_data,
       routing_data,
-      port_health_data,
-      links_data,
       qos_data,
       sm_info_data,
       port_hierarchy_data,
@@ -1585,15 +1432,16 @@ function App() {
       credit_watchdog_data,
       pci_performance_data,
       ber_advanced_data,
-      cable_enhanced_data,
       per_lane_performance_data,
       n2n_security_data,
+      cable_summary,
+      link_oscillation_summary,
+      xmit_summary,
+      histogram_summary,
       temperature_summary,
       power_summary,
       switch_summary,
       routing_summary,
-      port_health_summary,
-      links_summary,
       qos_summary,
       sm_info_summary,
       port_hierarchy_summary,
@@ -1617,7 +1465,6 @@ function App() {
       credit_watchdog_summary,
       pci_performance_summary,
       ber_advanced_summary,
-      cable_enhanced_summary,
       per_lane_performance_summary,
       n2n_security_summary,
       warnings_by_category,
@@ -1626,6 +1473,7 @@ function App() {
       data_total_rows,
       cable_total_rows,
       xmit_total_rows,
+      link_oscillation_total_rows,
       ber_total_rows,
       hca_total_rows,
       fan_total_rows,
@@ -1634,8 +1482,6 @@ function App() {
       power_total_rows,
       switch_total_rows,
       routing_total_rows,
-      port_health_total_rows,
-      links_total_rows,
       qos_total_rows,
       sm_info_total_rows,
       port_hierarchy_total_rows,
@@ -1659,7 +1505,6 @@ function App() {
       credit_watchdog_total_rows,
       pci_performance_total_rows,
       ber_advanced_total_rows,
-      cable_enhanced_total_rows,
       per_lane_performance_total_rows,
       n2n_security_total_rows,
     } = result.data
@@ -1697,6 +1542,8 @@ function App() {
           })
           .filter(Boolean)
           .sort((a, b) => b.count - a.count)
+        const frequentReboots = buildFrequentRebootHosts(hca_data)
+        const totalRebootHcas = frequentReboots.reduce((sum, host) => sum + host.nodes.length, 0)
 
         return (
           <div className="scroll-area">
@@ -1749,6 +1596,57 @@ function App() {
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {frequentReboots.length > 0 && (
+              <div className="card">
+                <div className="card-header-row">
+                  <h2>?? Frequent Rebooting Servers</h2>
+                  <button type="button" className="ghost-link" onClick={() => setActiveTab('hca')}>
+                    查看 HCA 标签
+                  </button>
+                </div>
+                <p className="card-subtitle">
+                  最近 {RECENT_REBOOT_THRESHOLD_HOURS} 小时内重启的主机（依据 HWInfo_UpTime）
+                </p>
+                <div className="overview-stat-row">
+                  <div className="overview-stat">
+                    <span className="overview-stat-label">受影响主机</span>
+                    <span className="overview-stat-value">{frequentReboots.length}</span>
+                  </div>
+                  <div className="overview-stat">
+                    <span className="overview-stat-label">关联 HCA</span>
+                    <span className="overview-stat-value">{totalRebootHcas}</span>
+                  </div>
+                </div>
+                <ul className="overview-alert-list">
+                  {frequentReboots.slice(0, 5).map(host => {
+                    const preview = host.nodes.slice(0, 3)
+                    return (
+                      <li key={host.host}>
+                        <div>
+                          <strong>{host.host}</strong> · {host.nodes.length} HCA
+                        </div>
+                        <div className="overview-alert-metadata">
+                          {preview.map(node => {
+                            const suffix = node.nodeName?.startsWith(host.host)
+                              ? node.nodeName.slice(host.host.length).replace(/^[/\-\s]+/, '') || node.nodeName
+                              : node.nodeName
+                            return (
+                              <span key={`${node.guid || node.nodeName}-uptime`}>
+                                {suffix || node.nodeName || node.guid} · {node.uptime}
+                              </span>
+                            )
+                          })}
+                          {host.nodes.length > preview.length && (
+                            <span>+{host.nodes.length - preview.length} 更多</span>
+                          )}
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
               </div>
             )}
 
@@ -1824,7 +1722,7 @@ function App() {
             <div className="card">
               <h2>Analysis Brief</h2>
               {Array.isArray(data) ? (
-                <PaginatedTable
+                <DataTable
                   rows={data}
                   totalRows={data_total_rows}
                   emptyDebug={{ stdout: result.data?.debug_stdout, stderr: result.data?.debug_stderr }}
@@ -1842,7 +1740,21 @@ function App() {
             <div className="card">
               <h2>📡 线缆与光模块健康分析</h2>
               <p>光模块温度、光功率、线缆规格完整分析</p>
-              <CableAnalysis cableData={cable_data} />
+              <CableAnalysis cableData={cable_data} summary={cable_summary} />
+            </div>
+          </div>
+        )
+      }
+      case 'link_oscillation': {
+        return (
+          <div className="scroll-area">
+            <div className="card">
+              <h2>🔁 链路震荡</h2>
+              <p>基于 PM_INFO LinkDownedCounter 的双端口路径视图，帮助定位频繁抖动的链路。</p>
+              <LinkOscillation
+                paths={link_oscillation_data}
+                summary={link_oscillation_summary}
+              />
             </div>
           </div>
         )
@@ -1853,7 +1765,7 @@ function App() {
             <div className="card">
               <h2>🚦 拥塞与错误分析 (Xmit)</h2>
               <p>端口等待时间、FECN/BECN拥塞通知、链路稳定性完整分析</p>
-              <CongestionAnalysis xmitData={xmit_data} />
+              <CongestionAnalysis xmitData={xmit_data} summary={xmit_summary} />
             </div>
           </div>
         )
@@ -1925,7 +1837,7 @@ function App() {
                 dataType="hca"
               />
 
-              <PaginatedTable
+              <DataTable
                 rows={hca_data}
                 totalRows={hca_total_rows}
               />
@@ -1934,7 +1846,20 @@ function App() {
         )
       }
       case 'latency': {
-        const latencyInsights = buildLatencyInsights(histogram_data || [])
+        const latencySummary = histogram_summary
+        let latencyInsights = buildLatencyInsights(histogram_data || [])
+        if ((!latencyInsights || latencyInsights.length === 0) && latencySummary?.top_outliers?.length) {
+          const fallbackRows = latencySummary.top_outliers.map(item => ({
+            'Node Name': item.node_name,
+            NodeGUID: item.node_guid,
+            PortNumber: item.port_number,
+            RttMedianUs: item.median_us,
+            RttP99Us: item.p99_us,
+            RttP99OverMedian: item.ratio,
+            RttUpperBucketRatio: item.upper_ratio,
+          }))
+          latencyInsights = buildLatencyInsights(fallbackRows)
+        }
         const { problems: latencyProblems, stats: latencyStats } = evaluateLatencyHealth(histogram_data)
 
         return (
@@ -1942,6 +1867,21 @@ function App() {
             <div className="card">
               <h2>Latency Histogram</h2>
               <p>RTT distribution and heavy-tail detection from ibdiagnet histograms.</p>
+
+              {latencySummary && (
+                <div className="summary-box" style={{ marginBottom: '16px', padding: '12px', background: 'var(--sidebar-bg)', borderRadius: '8px' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px' }}>
+                    <div><strong>Total Ports:</strong> {latencySummary.total_ports || 0}</div>
+                    <div><strong>High P99:</strong> <span style={{ color: latencySummary.high_p99_ports > 0 ? '#f97316' : '#22c55e' }}>{latencySummary.high_p99_ports || 0}</span></div>
+                    <div><strong>Tail &gt; 5x:</strong> <span style={{ color: latencySummary.severe_tail_ports > 0 ? '#dc2626' : '#22c55e' }}>{latencySummary.severe_tail_ports || 0}</span></div>
+                    <div><strong>Upper Bucket &gt;10%:</strong> <span style={{ color: latencySummary.upper_bucket_ports > 0 ? '#f59e0b' : '#22c55e' }}>{latencySummary.upper_bucket_ports || 0}</span></div>
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginTop: '8px' }}>
+                    <div><strong>Avg Median RTT:</strong> {(latencySummary.avg_median_us || 0).toFixed(2)} μs</div>
+                    <div><strong>Avg P99 RTT:</strong> {(latencySummary.avg_p99_us || 0).toFixed(2)} μs</div>
+                  </div>
+                </div>
+              )}
 
               <ProblemSummary
                 title="延迟分析"
@@ -1965,7 +1905,7 @@ function App() {
                   ))}
                 </div>
               )}
-              <PaginatedTable
+              <DataTable
                 rows={histogram_data}
                 totalRows={histogram_total_rows}
               />
@@ -2005,7 +1945,7 @@ function App() {
                   ))}
                 </div>
               )}
-              <PaginatedTable
+              <DataTable
                 rows={fan_data}
                 totalRows={fan_total_rows}
               />
@@ -2039,7 +1979,7 @@ function App() {
                 </div>
               )}
 
-              <PaginatedTable
+              <DataTable
                 rows={temperature_data}
                 totalRows={temperature_total_rows}
               />
@@ -2073,7 +2013,7 @@ function App() {
                 </div>
               )}
 
-              <PaginatedTable
+              <DataTable
                 rows={power_data}
                 totalRows={power_total_rows}
               />
@@ -2099,7 +2039,7 @@ function App() {
                 </div>
               )}
 
-              <PaginatedTable
+              <DataTable
                 rows={switch_data}
                 totalRows={switch_total_rows}
               />
@@ -2135,75 +2075,9 @@ function App() {
                 </div>
               )}
 
-              <PaginatedTable
+              <DataTable
                 rows={routing_data}
                 totalRows={routing_total_rows}
-              />
-            </div>
-          </div>
-        )
-      }
-      case 'port_health': {
-        const { problems: portHealthProblems, stats: portHealthStats } = evaluatePortHealth(port_health_data)
-
-        return (
-          <div className="scroll-area">
-            <div className="card">
-              <h2>Port Health Details</h2>
-              <p>ICRC errors, parity errors, FEC mode, and unhealthy port analysis.</p>
-
-              <ProblemSummary
-                title="端口健康详情"
-                problems={portHealthProblems}
-                totalChecked={portHealthStats.total}
-                dataType="port_health"
-              />
-
-              {port_health_summary && (
-                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
-                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>Total Ports:</strong> {port_health_summary.total_ports || 0}</div>
-                    <div><strong>ICRC Errors:</strong> {port_health_summary.total_icrc_errors || 0}</div>
-                    <div><strong>Parity Errors:</strong> {port_health_summary.total_parity_errors || 0}</div>
-                    <div><strong>Unhealthy Ports:</strong> {port_health_summary.unhealthy_ports || 0}</div>
-                    <div><strong>Link Down Events:</strong> {port_health_summary.total_link_down_events || 0}</div>
-                    <div><strong>Link Recovery Events:</strong> {port_health_summary.total_link_recovery_events || 0}</div>
-                  </div>
-                </div>
-              )}
-
-              <PaginatedTable
-                rows={port_health_data}
-                totalRows={port_health_total_rows}
-              />
-            </div>
-          </div>
-        )
-      }
-      case 'links': {
-        return (
-          <div className="scroll-area">
-            <div className="card">
-              <h2>Network Links</h2>
-              <p>Node-to-node connectivity and link topology.</p>
-
-              {links_summary && (
-                <div style={{ marginBottom: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '6px' }}>
-                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div><strong>Total Links:</strong> {links_summary.total_links || 0}</div>
-                    <div><strong>Unique Nodes:</strong> {links_summary.unique_nodes || 0}</div>
-                    <div><strong>Avg Ports/Node:</strong> {links_summary.avg_ports_per_node || 0}</div>
-                    <div><strong>Max Ports/Node:</strong> {links_summary.max_ports_per_node || 0}</div>
-                    {links_summary.asymmetric_links > 0 && (
-                      <div style={{ color: '#ef4444' }}><strong>Asymmetric Links:</strong> {links_summary.asymmetric_links}</div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              <PaginatedTable
-                rows={links_data}
-                totalRows={links_total_rows}
               />
             </div>
           </div>
@@ -2227,7 +2101,7 @@ function App() {
                 </div>
               )}
 
-              <PaginatedTable
+              <DataTable
                 rows={qos_data}
                 totalRows={qos_total_rows}
               />
@@ -2256,7 +2130,7 @@ function App() {
                 </div>
               )}
 
-              <PaginatedTable
+              <DataTable
                 rows={sm_info_data}
                 totalRows={sm_info_total_rows}
               />
@@ -2290,7 +2164,7 @@ function App() {
                 </div>
               )}
 
-              <PaginatedTable
+              <DataTable
                 rows={port_hierarchy_data}
                 totalRows={port_hierarchy_total_rows}
               />
@@ -2361,7 +2235,7 @@ function App() {
                 </div>
               )}
 
-              <PaginatedTable
+              <DataTable
                 rows={mlnx_counters_data}
                 totalRows={mlnx_counters_total_rows}
               />
@@ -2431,7 +2305,7 @@ function App() {
                 </div>
               )}
 
-              <PaginatedTable
+              <DataTable
                 rows={pm_delta_data}
                 totalRows={pm_delta_total_rows}
               />
@@ -2459,7 +2333,7 @@ function App() {
                 </div>
               )}
 
-              <PaginatedTable
+              <DataTable
                 rows={vports_data}
                 totalRows={vports_total_rows}
               />
@@ -2493,7 +2367,7 @@ function App() {
                 </div>
               )}
 
-              <PaginatedTable
+              <DataTable
                 rows={pkey_data}
                 totalRows={pkey_total_rows}
               />
@@ -2541,7 +2415,7 @@ function App() {
                 </div>
               )}
 
-              <PaginatedTable
+              <DataTable
                 rows={system_info_data}
                 totalRows={system_info_total_rows}
               />
@@ -2579,7 +2453,7 @@ function App() {
                 </div>
               )}
 
-              <PaginatedTable
+              <DataTable
                 rows={extended_port_info_data}
                 totalRows={extended_port_info_total_rows}
               />
@@ -2610,7 +2484,7 @@ function App() {
                 </div>
               )}
 
-              <PaginatedTable
+              <DataTable
                 rows={ar_info_data}
                 totalRows={ar_info_total_rows}
               />
@@ -2653,7 +2527,7 @@ function App() {
                 </div>
               )}
 
-              <PaginatedTable
+              <DataTable
                 rows={sharp_data}
                 totalRows={sharp_total_rows}
               />
@@ -2695,7 +2569,7 @@ function App() {
                 </div>
               )}
 
-              <PaginatedTable
+              <DataTable
                 rows={fec_mode_data}
                 totalRows={fec_mode_total_rows}
               />
@@ -2724,7 +2598,7 @@ function App() {
                 </div>
               )}
 
-              <PaginatedTable
+              <DataTable
                 rows={phy_diagnostics_data}
                 totalRows={phy_diagnostics_total_rows}
               />
@@ -2754,7 +2628,7 @@ function App() {
                 </div>
               )}
 
-              <PaginatedTable
+              <DataTable
                 rows={neighbors_data}
                 totalRows={neighbors_total_rows}
               />
@@ -2783,7 +2657,7 @@ function App() {
                 </div>
               )}
 
-              <PaginatedTable
+              <DataTable
                 rows={buffer_histogram_data}
                 totalRows={buffer_histogram_total_rows}
               />
@@ -2821,7 +2695,7 @@ function App() {
                 </div>
               )}
 
-              <PaginatedTable
+              <DataTable
                 rows={extended_node_info_data}
                 totalRows={extended_node_info_total_rows}
               />
@@ -2851,7 +2725,7 @@ function App() {
                 </div>
               )}
 
-              <PaginatedTable
+              <DataTable
                 rows={extended_switch_info_data}
                 totalRows={extended_switch_info_total_rows}
               />
@@ -2881,7 +2755,7 @@ function App() {
                 </div>
               )}
 
-              <PaginatedTable
+              <DataTable
                 rows={power_sensors_data}
                 totalRows={power_sensors_total_rows}
               />
@@ -2911,7 +2785,7 @@ function App() {
                 </div>
               )}
 
-              <PaginatedTable
+              <DataTable
                 rows={routing_config_data}
                 totalRows={routing_config_total_rows}
               />
@@ -2941,7 +2815,7 @@ function App() {
                 </div>
               )}
 
-              <PaginatedTable
+              <DataTable
                 rows={temp_alerts_data}
                 totalRows={temp_alerts_total_rows}
               />
@@ -2970,7 +2844,7 @@ function App() {
                 </div>
               )}
 
-              <PaginatedTable
+              <DataTable
                 rows={credit_watchdog_data}
                 totalRows={credit_watchdog_total_rows}
               />
@@ -3006,7 +2880,7 @@ function App() {
                 </div>
               )}
 
-              <PaginatedTable
+              <DataTable
                 rows={pci_performance_data}
                 totalRows={pci_performance_total_rows}
               />
@@ -3036,40 +2910,9 @@ function App() {
                 </div>
               )}
 
-              <PaginatedTable
+              <DataTable
                 rows={ber_advanced_data}
                 totalRows={ber_advanced_total_rows}
-              />
-            </div>
-          </div>
-        )
-      }
-      case 'cable_enhanced': {
-        return (
-          <div className="scroll-area">
-            <div className="card">
-              <h2><PlugZap size={20} /> Cable Enhanced Analysis</h2>
-              {cable_enhanced_summary && (
-                <div className="summary-box" style={{ marginBottom: '16px', padding: '12px', background: 'var(--sidebar-bg)', borderRadius: '8px' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px' }}>
-                    <div><strong>Total Cables:</strong> {cable_enhanced_summary.total_cables || 0}</div>
-                    <div><strong>Optical:</strong> {cable_enhanced_summary.optical_count || 0}</div>
-                    <div><strong>AOC:</strong> {cable_enhanced_summary.aoc_count || 0}</div>
-                    <div><strong>Copper:</strong> {cable_enhanced_summary.copper_count || 0}</div>
-                    <div><strong>DOM Capable:</strong> {cable_enhanced_summary.dom_capable_count || 0}</div>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginTop: '12px' }}>
-                    <div><strong>Temp Warnings:</strong> <span style={{ color: cable_enhanced_summary.temp_warning_count > 0 ? '#f59e0b' : '#22c55e' }}>{cable_enhanced_summary.temp_warning_count || 0}</span></div>
-                    <div><strong>Temp Critical:</strong> <span style={{ color: cable_enhanced_summary.temp_critical_count > 0 ? '#dc2626' : '#22c55e' }}>{cable_enhanced_summary.temp_critical_count || 0}</span></div>
-                    <div><strong>Power Issues:</strong> <span style={{ color: (cable_enhanced_summary.power_warning_count + cable_enhanced_summary.power_critical_count) > 0 ? '#dc2626' : '#22c55e' }}>{(cable_enhanced_summary.power_warning_count || 0) + (cable_enhanced_summary.power_critical_count || 0)}</span></div>
-                    <div><strong>Compliance Issues:</strong> <span style={{ color: cable_enhanced_summary.compliance_issues > 0 ? '#f59e0b' : '#22c55e' }}>{cable_enhanced_summary.compliance_issues || 0}</span></div>
-                  </div>
-                </div>
-              )}
-
-              <PaginatedTable
-                rows={cable_enhanced_data}
-                totalRows={cable_enhanced_total_rows}
               />
             </div>
           </div>
@@ -3103,7 +2946,7 @@ function App() {
                 </div>
               )}
 
-              <PaginatedTable
+              <DataTable
                 rows={per_lane_performance_data}
                 totalRows={per_lane_performance_total_rows}
               />
@@ -3139,7 +2982,7 @@ function App() {
                 </div>
               )}
 
-              <PaginatedTable
+              <DataTable
                 rows={n2n_security_data}
                 totalRows={n2n_security_total_rows}
               />
@@ -3198,60 +3041,91 @@ function App() {
         </div>
 
         <div className="content">
-          {result && result.type === 'ibdiagnet' && (
-            <div className="tabs grouped-tabs">
-              <div
-                className={`tab overview-tab ${activeTab === 'overview' ? 'active' : ''}`}
-                onClick={() => setActiveTab('overview')}
-              >
-                <Activity size={16} /> 总览
-              </div>
-              {TAB_GROUPS.map(group => (
-                <div key={group.key} className="tab-group">
-                  <div className="tab-group-header">
-                    <h4>{group.label}</h4>
-                    <span>{group.description}</span>
-                  </div>
-                  <div className="tab-group-tabs">
-                    {group.tabs.map(({ key, label, icon: Icon }) => (
-                      <div
-                        key={key}
-                        className={`tab ${activeTab === key ? 'active' : ''}`}
-                        onClick={() => setActiveTab(key)}
-                      >
-                        {Icon && <Icon size={16} />} {label}
-                      </div>
-                    ))}
+          <aside className="tab-panel">
+            {result && result.type === 'ibdiagnet' ? (
+              <>
+                <div className="tab-panel-header">
+                  <div>
+                    <p className="tab-panel-caption">健康分组导航</p>
+                    <h3>分析标签</h3>
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
-
-          <div className="content-inner">
-            {result ? (
-              <>
-                {result.type === 'ibdiagnet' && renderIbdiagnetContent()}
-                
-                {result.type === 'csv' && (
-                  <div className="scroll-area">
-                    <div className="card">
-                      <h2>{result.data.filename}</h2>
-                      <p>Total Rows: {result.data.row_count}</p>
-                      <PaginatedTable
-                        rows={result.data.data}
-                        totalRows={result.data.row_count}
-                      />
-                    </div>
+                <div className="tabs grouped-tabs">
+                  <div
+                    className={`tab overview-tab ${activeTab === 'overview' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('overview')}
+                  >
+                    <Activity size={16} /> 总览
                   </div>
-                )}
+                  {TAB_GROUPS.map(group => {
+                    const collapsed = !!navCollapsedGroups[group.key]
+                    return (
+                      <div key={group.key} className="tab-group">
+                        <div className="tab-group-header">
+                          <div>
+                            <h4>{group.label}</h4>
+                            <span>{group.description}</span>
+                          </div>
+                          <button
+                            type="button"
+                            className="tab-group-toggle"
+                            onClick={() => toggleNavGroup(group.key)}
+                            aria-label="Toggle group"
+                          >
+                            {collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+                          </button>
+                        </div>
+                        {!collapsed && (
+                          <div className="tab-group-tabs">
+                            {group.tabs.map(({ key, label, icon: Icon }) => (
+                              <div
+                                key={key}
+                                className={`tab ${activeTab === key ? 'active' : ''}`}
+                                onClick={() => setActiveTab(key)}
+                              >
+                                {Icon && <Icon size={16} />} {label}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
               </>
             ) : (
-              <div className="placeholder">
-                <Activity size={48} style={{opacity: 0.2, marginBottom: '20px'}} />
-                <p>Select a file from the sidebar to start analysis.</p>
+              <div className="tab-panel-placeholder">
+                <p>上传 ibdiagnet 结果后即可浏览各类检查分组。</p>
               </div>
             )}
+          </aside>
+
+          <div className="workspace">
+            <div className="content-inner">
+              {result ? (
+                <>
+                  {result.type === 'ibdiagnet' && renderIbdiagnetContent()}
+
+                  {result.type === 'csv' && (
+                    <div className="scroll-area">
+                      <div className="card">
+                        <h2>{result.data.filename}</h2>
+                        <p>Total Rows: {result.data.row_count}</p>
+                        <DataTable
+                          rows={result.data.data}
+                          totalRows={result.data.row_count}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="placeholder">
+                  <Activity size={48} style={{opacity: 0.2, marginBottom: '20px'}} />
+                  <p>Select a file from the sidebar to start analysis.</p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -3297,3 +3171,9 @@ function App() {
 }
 
 export default App
+  const toggleNavGroup = (groupKey) => {
+    setNavCollapsedGroups(prev => ({
+      ...prev,
+      [groupKey]: !prev[groupKey],
+    }))
+  }

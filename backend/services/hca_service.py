@@ -17,6 +17,7 @@ from .topology_lookup import TopologyLookup
 logger = logging.getLogger(__name__)
 
 HCA_TABLE = "NODES_INFO"
+RECENT_REBOOT_THRESHOLD_SECONDS = 60 * 60  # Flag hosts restarted within the last hour
 
 
 class HcaService:
@@ -42,6 +43,7 @@ class HcaService:
         frames = [
             self._build_flag_anomaly(df, "PSID_Compliant", AnomlyType.IBH_PSID_UNSUPPORTED),
             self._build_version_anomaly(df, "FW_Compliant", "FW_Lag", AnomlyType.IBH_FW_OUTDATED),
+            self._build_recent_reboot_anomaly(df),
         ]
         frames = [frame for frame in frames if frame is not None]
         if not frames:
@@ -77,6 +79,10 @@ class HcaService:
         df["FWInfo_Extended_Minor"] = df["FWInfo_Extended_Minor"].apply(safe_hex_to_int)
         df["FWInfo_Extended_SubMinor"] = df["FWInfo_Extended_SubMinor"].apply(safe_hex_to_int)
         df["Up Time"] = df["HWInfo_UpTime"].apply(self._safe_uptime)
+        df["UptimeSeconds"] = df["HWInfo_UpTime"].apply(self._uptime_seconds)
+        df["RecentlyRebooted"] = df["UptimeSeconds"].apply(
+            lambda seconds: bool(seconds) and seconds <= RECENT_REBOOT_THRESHOLD_SECONDS
+        )
         df["FW"] = (
             df["FWInfo_Extended_Major"].astype(str)
             + "."
@@ -99,6 +105,9 @@ class HcaService:
             "FW Date",
             "FWInfo_PSID",
             "HWInfo_UpTime",
+            "Up Time",
+            "UptimeSeconds",
+            "RecentlyRebooted",
             "PSID_Compliant",
             "FW_Compliant",
             "RecommendedFW",
@@ -232,7 +241,29 @@ class HcaService:
         )
         return flagged[IBH_ANOMALY_TBL_KEY + [str(anomaly)]]
 
+    def _build_recent_reboot_anomaly(self, df: pd.DataFrame):
+        if "RecentlyRebooted" not in df.columns:
+            return None
+        mask = df["RecentlyRebooted"].fillna(False)
+        if not mask.any():
+            return None
+        if "PortNumber" not in df.columns:
+            df = df.copy()
+            df["PortNumber"] = 0
+        flagged = df.loc[mask, IBH_ANOMALY_TBL_KEY].copy()
+        flagged[str(AnomlyType.IBH_RECENT_REBOOT)] = 1.0
+        return flagged
+
     def _topology_lookup(self) -> TopologyLookup:
         if self._topology is None:
             self._topology = TopologyLookup(self.dataset_root)
         return self._topology
+
+    @staticmethod
+    def _uptime_seconds(value: object) -> int:
+        if pd.isna(value) or value is None:
+            return 0
+        try:
+            return int(str(value), 16)
+        except (ValueError, TypeError):
+            return 0
