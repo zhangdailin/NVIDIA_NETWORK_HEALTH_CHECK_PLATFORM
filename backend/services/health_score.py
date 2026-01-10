@@ -85,6 +85,7 @@ ANOMALY_CATEGORIES = {
     AnomlyType.IBH_TEMP_WARNING: ("errors", Severity.WARNING),
     AnomlyType.IBH_PSU_CRITICAL: ("errors", Severity.CRITICAL),
     AnomlyType.IBH_PSU_WARNING: ("errors", Severity.WARNING),
+    AnomlyType.IBH_RECENT_REBOOT: ("errors", Severity.WARNING),
     # MLNX counters / performance
     AnomlyType.IBH_MLNX_COUNTER_CRITICAL: ("errors", Severity.CRITICAL),
     AnomlyType.IBH_MLNX_COUNTER_WARNING: ("errors", Severity.WARNING),

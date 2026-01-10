@@ -283,6 +283,11 @@ class PerLanePerformanceService:
                 records.append(record)
 
         # Build summary
+        critical_ports = sum(1 for r in records if r.get("Severity") == "critical")
+        warning_ports = sum(1 for r in records if r.get("Severity") == "warning")
+        ports_with_issue = sum(1 for r in records if r.get("LanesWithIssues", 0) > 0)
+        ports_with_eq_issue = sum(1 for r in records if r.get("LanesWithEQIssues", 0) > 0)
+
         summary = {
             "total_lanes_analyzed": total_lanes,
             "total_ports_analyzed": len(ports_analyzed),
@@ -294,6 +299,10 @@ class PerLanePerformanceService:
             "p_db4_rows": len(p_db4_df),
             "p_db5_rows": len(p_db5_df),
             "phy_db4_rows": len(phy_db4_df),
+            "critical_ports": critical_ports,
+            "warning_ports": warning_ports,
+            "ports_with_lane_issues": ports_with_issue,
+            "ports_with_eq_issues": ports_with_eq_issue,
         }
 
         # Sort by severity

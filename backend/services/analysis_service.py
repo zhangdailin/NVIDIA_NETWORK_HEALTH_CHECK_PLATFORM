@@ -29,7 +29,6 @@ from .ber_advanced_service import BerAdvancedService
 from .ber_service import BerService
 from .brief_service import BriefService
 from .buffer_histogram_service import BufferHistogramService
-from .cable_enhanced_service import CableEnhancedService
 from .cable_service import CableService
 from .credit_watchdog_service import CreditWatchdogService
 from .extended_node_info_service import ExtendedNodeInfoService
@@ -40,7 +39,7 @@ from .fec_mode_service import FecModeService
 from .hca_service import HcaService
 from .histogram_service import HistogramService
 from .ibdiagnet import read_index_table, read_table
-from .links_service import LinksService
+from .link_oscillation_service import LinkOscillationService
 from .mlnx_counters_service import MlnxCountersService
 from .n2n_security_service import N2NSecurityService
 from .neighbors_service import NeighborsService
@@ -49,7 +48,6 @@ from .per_lane_performance_service import PerLanePerformanceService
 from .phy_diagnostics_service import PhyDiagnosticsService
 from .pkey_service import PkeyService
 from .pm_delta_service import PmDeltaService
-from .port_health_service import PortHealthService
 from .port_hierarchy_service import PortHierarchyService
 from .power_sensors_service import PowerSensorsService
 from .power_service import PowerService
@@ -111,6 +109,8 @@ class AnalysisService:
     def __init__(self, *, expected_topology_path: Optional[Path] = None):
         self._dataset_cache: Dict[Path, IbdiagnetDataset] = {}
         self._cache_lock = threading.Lock()  # Thread-safe cache access
+        self._service_result_cache: Dict[Tuple[str, Path], object] = {}
+        self._service_cache_lock = threading.Lock()
         path = (
             Path(expected_topology_path).expanduser()
             if expected_topology_path
@@ -128,6 +128,46 @@ class AnalysisService:
                 dataset = IbdiagnetDataset(root=extracted_dir)
                 self._dataset_cache[extracted_dir] = dataset
         return dataset
+
+    def release_dataset(self, extracted_dir: Path) -> None:
+        """Release cached dataset/service state once analysis completes."""
+        normalized = self._normalize_dataset_path(extracted_dir)
+        with self._cache_lock:
+            self._dataset_cache.pop(normalized, None)
+        self.clear_cached_service(dataset_path=normalized)
+
+    def _normalize_dataset_path(self, dataset_path: Path) -> Path:
+        try:
+            return dataset_path.resolve()
+        except Exception:
+            return dataset_path
+
+    def _get_cached_service_result(self, key: str, dataset_path: Path):
+        normalized = self._normalize_dataset_path(dataset_path)
+        with self._service_cache_lock:
+            return self._service_result_cache.get((key, normalized))
+
+    def _set_cached_service_result(self, key: str, dataset_path: Path, value: object) -> None:
+        normalized = self._normalize_dataset_path(dataset_path)
+        with self._service_cache_lock:
+            self._service_result_cache[(key, normalized)] = value
+
+    def clear_cached_service(self, dataset_path: Optional[Path] = None, service_key: Optional[str] = None) -> None:
+        """Clear cached service results to avoid stale data / free memory."""
+        with self._service_cache_lock:
+            if dataset_path is None and service_key is None:
+                self._service_result_cache.clear()
+                return
+            normalized = self._normalize_dataset_path(dataset_path) if dataset_path else None
+            keys_to_remove = []
+            for (key, path_key) in list(self._service_result_cache.keys()):
+                if service_key and key != service_key:
+                    continue
+                if normalized and path_key != normalized:
+                    continue
+                keys_to_remove.append((key, path_key))
+            for cache_key in keys_to_remove:
+                self._service_result_cache.pop(cache_key, None)
 
     def _default_expected_topology_path(self) -> Optional[Path]:
         env_var = os.environ.get("EXPECTED_TOPOLOGY_FILE")
@@ -152,286 +192,108 @@ class AnalysisService:
         """
         Execute the pipeline and return all artifacts required by the frontend.
         """
-        self.load_dataset(target_dir)
+        dataset = self.load_dataset(target_dir)
+        target_dir = dataset.root
         loop = loop or asyncio.get_event_loop()
 
-        logger.info("Running native cable analysis...")
-        cable_analysis = await loop.run_in_executor(
-            executor,
-            self._run_cable_service,
-            target_dir,
-        )
+        try:
+            service_specs = [
+                ("cable", "Running native cable analysis...", self._run_cable_service),
+                ("xmit", "Running native xmit analysis...", self._run_xmit_service),
+                ("link_oscillation", "Running link oscillation analysis...", self._run_link_oscillation_service),
+                ("ber", "Running native BER analysis...", self._run_ber_service),
+                ("hca", "Running native HCA analysis...", self._run_hca_service),
+                ("fan", "Running native fan analysis...", self._run_fan_service),
+                ("histogram", "Running performance histogram analysis...", self._run_histogram_service),
+                ("warnings", "Running ibdiagnet warnings analysis...", self._run_warnings_service),
+                ("temperature", "Running temperature sensor analysis...", self._run_temperature_service),
+                ("power", "Running power supply analysis...", self._run_power_service),
+                ("switch", "Running switch analysis...", self._run_switch_service),
+                ("routing", "Running routing analysis...", self._run_routing_service),
+                ("qos", "Running QoS/VL arbitration analysis...", self._run_qos_service),
+                ("sm_info", "Running Subnet Manager analysis...", self._run_sm_info_service),
+                ("port_hierarchy", "Running Port Hierarchy analysis...", self._run_port_hierarchy_service),
+                ("mlnx_counters", "Running MLNX Counters analysis...", self._run_mlnx_counters_service),
+                ("pm_delta", "Running PM Delta analysis...", self._run_pm_delta_service),
+                ("vports", "Running VPorts analysis...", self._run_vports_service),
+                ("pkey", "Running PKEY analysis...", self._run_pkey_service),
+                ("system_info", "Running System Info analysis...", self._run_system_info_service),
+                ("extended_port_info", "Running Extended Port Info analysis...", self._run_extended_port_info_service),
+                ("ar_info", "Running AR Info analysis...", self._run_ar_info_service),
+                ("sharp", "Running SHARP analysis...", self._run_sharp_service),
+                ("fec_mode", "Running FEC Mode analysis...", self._run_fec_mode_service),
+                ("phy_diagnostics", "Running PHY Diagnostics analysis...", self._run_phy_diagnostics_service),
+                ("neighbors", "Running Neighbors analysis...", self._run_neighbors_service),
+                ("buffer_histogram", "Running Buffer Histogram analysis...", self._run_buffer_histogram_service),
+                ("extended_node_info", "Running Extended Node Info analysis...", self._run_extended_node_info_service),
+                ("extended_switch_info", "Running Extended Switch Info analysis...", self._run_extended_switch_info_service),
+                ("power_sensors", "Running Power Sensors analysis...", self._run_power_sensors_service),
+                ("routing_config", "Running Routing Config analysis...", self._run_routing_config_service),
+                ("temp_alerts", "Running Temperature Alerts analysis...", self._run_temp_alerts_service),
+                ("credit_watchdog", "Running Credit Watchdog analysis...", self._run_credit_watchdog_service),
+                ("pci_performance", "Running PCI Performance analysis...", self._run_pci_performance_service),
+                ("ber_advanced", "Running BER Advanced analysis...", self._run_ber_advanced_service),
+                ("per_lane_performance", "Running Per-Lane Performance analysis...", self._run_per_lane_performance_service),
+                ("n2n_security", "Running N2N Security analysis...", self._run_n2n_security_service),
+            ]
 
-        logger.info("Running native xmit analysis...")
-        xmit_analysis = await loop.run_in_executor(
-            executor,
-            self._run_xmit_service,
-            target_dir,
-        )
+            service_futures = {}
+            for name, log_message, runner in service_specs:
+                logger.info(log_message)
+                service_futures[name] = loop.run_in_executor(executor, runner, target_dir)
 
-        logger.info("Running native BER analysis...")
-        ber_analysis = await loop.run_in_executor(
-            executor,
-            self._run_ber_service,
-            target_dir,
-        )
+            results = await asyncio.gather(*service_futures.values())
 
-        logger.info("Running native HCA analysis...")
-        hca_data, hca_anomaly_df = await loop.run_in_executor(
-            executor,
-            self._run_hca_service,
-            target_dir,
-        )
+            service_results = {
+                name: result for (name, _, _), result in zip(service_specs, results)
+            }
 
-        logger.info("Running native fan analysis...")
-        fan_analysis = await loop.run_in_executor(
-            executor,
-            self._run_fan_service,
-            target_dir,
-        )
+            logger.info("All analyses completed")
 
-        logger.info("Running performance histogram analysis...")
-        histogram_analysis = await loop.run_in_executor(
-            executor,
-            self._run_histogram_service,
-            target_dir,
-        )
-
-        logger.info("Running ibdiagnet warnings analysis...")
-        warnings_analysis = await loop.run_in_executor(
-            executor,
-            self._run_warnings_service,
-            target_dir,
-        )
-
-        logger.info("Running temperature sensor analysis...")
-        temperature_analysis = await loop.run_in_executor(
-            executor,
-            self._run_temperature_service,
-            target_dir,
-        )
-
-        logger.info("Running power supply analysis...")
-        power_analysis = await loop.run_in_executor(
-            executor,
-            self._run_power_service,
-            target_dir,
-        )
-
-        logger.info("Running switch analysis...")
-        switch_analysis = await loop.run_in_executor(
-            executor,
-            self._run_switch_service,
-            target_dir,
-        )
-
-        logger.info("Running routing analysis...")
-        routing_analysis = await loop.run_in_executor(
-            executor,
-            self._run_routing_service,
-            target_dir,
-        )
-
-        logger.info("Running port health analysis...")
-        port_health_analysis = await loop.run_in_executor(
-            executor,
-            self._run_port_health_service,
-            target_dir,
-        )
-
-        logger.info("Running links analysis...")
-        links_analysis = await loop.run_in_executor(
-            executor,
-            self._run_links_service,
-            target_dir,
-        )
-
-        logger.info("Running QoS/VL arbitration analysis...")
-        qos_analysis = await loop.run_in_executor(
-            executor,
-            self._run_qos_service,
-            target_dir,
-        )
-
-        logger.info("Running Subnet Manager analysis...")
-        sm_info_analysis = await loop.run_in_executor(
-            executor,
-            self._run_sm_info_service,
-            target_dir,
-        )
-
-        logger.info("Running Port Hierarchy analysis...")
-        port_hierarchy_analysis = await loop.run_in_executor(
-            executor,
-            self._run_port_hierarchy_service,
-            target_dir,
-        )
-
-        logger.info("Running MLNX Counters analysis...")
-        mlnx_counters_analysis = await loop.run_in_executor(
-            executor,
-            self._run_mlnx_counters_service,
-            target_dir,
-        )
-
-        logger.info("Running PM Delta analysis...")
-        pm_delta_analysis = await loop.run_in_executor(
-            executor,
-            self._run_pm_delta_service,
-            target_dir,
-        )
-
-        logger.info("Running VPorts analysis...")
-        vports_analysis = await loop.run_in_executor(
-            executor,
-            self._run_vports_service,
-            target_dir,
-        )
-
-        logger.info("Running PKEY analysis...")
-        pkey_analysis = await loop.run_in_executor(
-            executor,
-            self._run_pkey_service,
-            target_dir,
-        )
-
-        logger.info("Running System Info analysis...")
-        system_info_analysis = await loop.run_in_executor(
-            executor,
-            self._run_system_info_service,
-            target_dir,
-        )
-
-        logger.info("Running Extended Port Info analysis...")
-        extended_port_info_analysis = await loop.run_in_executor(
-            executor,
-            self._run_extended_port_info_service,
-            target_dir,
-        )
-
-        logger.info("Running AR Info analysis...")
-        ar_info_analysis = await loop.run_in_executor(
-            executor,
-            self._run_ar_info_service,
-            target_dir,
-        )
-
-        logger.info("Running SHARP analysis...")
-        sharp_analysis = await loop.run_in_executor(
-            executor,
-            self._run_sharp_service,
-            target_dir,
-        )
-
-        logger.info("Running FEC Mode analysis...")
-        fec_mode_analysis = await loop.run_in_executor(
-            executor,
-            self._run_fec_mode_service,
-            target_dir,
-        )
-
-        logger.info("Running PHY Diagnostics analysis...")
-        phy_diagnostics_analysis = await loop.run_in_executor(
-            executor,
-            self._run_phy_diagnostics_service,
-            target_dir,
-        )
-
-        logger.info("Running Neighbors analysis...")
-        neighbors_analysis = await loop.run_in_executor(
-            executor,
-            self._run_neighbors_service,
-            target_dir,
-        )
-
-        logger.info("Running Buffer Histogram analysis...")
-        buffer_histogram_analysis = await loop.run_in_executor(
-            executor,
-            self._run_buffer_histogram_service,
-            target_dir,
-        )
-
-        logger.info("Running Extended Node Info analysis...")
-        extended_node_info_analysis = await loop.run_in_executor(
-            executor,
-            self._run_extended_node_info_service,
-            target_dir,
-        )
-
-        logger.info("Running Extended Switch Info analysis...")
-        extended_switch_info_analysis = await loop.run_in_executor(
-            executor,
-            self._run_extended_switch_info_service,
-            target_dir,
-        )
-
-        logger.info("Running Power Sensors analysis...")
-        power_sensors_analysis = await loop.run_in_executor(
-            executor,
-            self._run_power_sensors_service,
-            target_dir,
-        )
-
-        logger.info("Running Routing Config analysis...")
-        routing_config_analysis = await loop.run_in_executor(
-            executor,
-            self._run_routing_config_service,
-            target_dir,
-        )
-
-        logger.info("Running Temperature Alerts analysis...")
-        temp_alerts_analysis = await loop.run_in_executor(
-            executor,
-            self._run_temp_alerts_service,
-            target_dir,
-        )
-
-        logger.info("Running Credit Watchdog analysis...")
-        credit_watchdog_analysis = await loop.run_in_executor(
-            executor,
-            self._run_credit_watchdog_service,
-            target_dir,
-        )
-
-        logger.info("Running PCI Performance analysis...")
-        pci_performance_analysis = await loop.run_in_executor(
-            executor,
-            self._run_pci_performance_service,
-            target_dir,
-        )
-
-        logger.info("Running BER Advanced analysis...")
-        ber_advanced_analysis = await loop.run_in_executor(
-            executor,
-            self._run_ber_advanced_service,
-            target_dir,
-        )
-
-        logger.info("Running Cable Enhanced analysis...")
-        cable_enhanced_analysis = await loop.run_in_executor(
-            executor,
-            self._run_cable_enhanced_service,
-            target_dir,
-        )
-
-        logger.info("Running Per-Lane Performance analysis...")
-        per_lane_performance_analysis = await loop.run_in_executor(
-            executor,
-            self._run_per_lane_performance_service,
-            target_dir,
-        )
-
-        logger.info("Running N2N Security analysis...")
-        n2n_security_analysis = await loop.run_in_executor(
-            executor,
-            self._run_n2n_security_service,
-            target_dir,
-        )
-
-        logger.info("All analyses completed")
+            cable_analysis = service_results["cable"]
+            xmit_analysis = service_results["xmit"]
+            link_oscillation_analysis = service_results["link_oscillation"]
+            ber_analysis = service_results["ber"]
+            hca_data, hca_anomaly_df = service_results["hca"]
+            fan_analysis = service_results["fan"]
+            histogram_analysis = service_results["histogram"]
+            warnings_analysis = service_results["warnings"]
+            temperature_analysis = service_results["temperature"]
+            power_analysis = service_results["power"]
+            switch_analysis = service_results["switch"]
+            routing_analysis = service_results["routing"]
+            qos_analysis = service_results["qos"]
+            sm_info_analysis = service_results["sm_info"]
+            port_hierarchy_analysis = service_results["port_hierarchy"]
+            mlnx_counters_analysis = service_results["mlnx_counters"]
+            pm_delta_analysis = service_results["pm_delta"]
+            vports_analysis = service_results["vports"]
+            pkey_analysis = service_results["pkey"]
+            system_info_analysis = service_results["system_info"]
+            extended_port_info_analysis = service_results["extended_port_info"]
+            ar_info_analysis = service_results["ar_info"]
+            sharp_analysis = service_results["sharp"]
+            fec_mode_analysis = service_results["fec_mode"]
+            phy_diagnostics_analysis = service_results["phy_diagnostics"]
+            neighbors_analysis = service_results["neighbors"]
+            buffer_histogram_analysis = service_results["buffer_histogram"]
+            extended_node_info_analysis = service_results["extended_node_info"]
+            extended_switch_info_analysis = service_results["extended_switch_info"]
+            power_sensors_analysis = service_results["power_sensors"]
+            routing_config_analysis = service_results["routing_config"]
+            temp_alerts_analysis = service_results["temp_alerts"]
+            credit_watchdog_analysis = service_results["credit_watchdog"]
+            pci_performance_analysis = service_results["pci_performance"]
+            ber_advanced_analysis = service_results["ber_advanced"]
+            per_lane_performance_analysis = service_results["per_lane_performance"]
+            n2n_security_analysis = service_results["n2n_security"]
+        finally:
+            self.release_dataset(target_dir)
 
         cable_rows = cable_analysis.data
+        cable_summary = cable_analysis.summary or {}
         xmit_rows = xmit_analysis.data
+        link_oscillation_rows = link_oscillation_analysis.data
         ber_rows = ber_analysis.data
         hca_rows = hca_data
         fan_rows = fan_analysis.data
@@ -440,8 +302,6 @@ class AnalysisService:
         power_rows = power_analysis.data
         switch_rows = switch_analysis.data
         routing_rows = routing_analysis.data
-        port_health_rows = port_health_analysis.data
-        links_rows = links_analysis.data
         qos_rows = qos_analysis.data
         sm_info_rows = sm_info_analysis.data
         port_hierarchy_rows = port_hierarchy_analysis.data
@@ -465,7 +325,6 @@ class AnalysisService:
         credit_watchdog_rows = credit_watchdog_analysis.data
         pci_performance_rows = pci_performance_analysis.data
         ber_advanced_rows = ber_advanced_analysis.data
-        cable_enhanced_rows = cable_enhanced_analysis.data
         per_lane_performance_rows = per_lane_performance_analysis.data
         n2n_security_rows = n2n_security_analysis.data
         cable_anomalies = self._flatten_anomaly_records(cable_analysis.anomalies)
@@ -477,9 +336,7 @@ class AnalysisService:
         temperature_anomalies = self._flatten_anomaly_records(temperature_analysis.anomalies)
         power_anomalies = self._flatten_anomaly_records(power_analysis.anomalies)
         routing_anomalies = self._flatten_anomaly_records(routing_analysis.anomalies)
-        port_health_anomalies = self._flatten_anomaly_records(port_health_analysis.anomalies)
         pci_performance_anomalies = self._flatten_anomaly_records(pci_performance_analysis.anomalies)
-        links_anomalies = self._flatten_anomaly_records(links_analysis.anomalies)
         qos_anomalies = self._flatten_anomaly_records(qos_analysis.anomalies)
         mlnx_counters_anomalies = self._flatten_anomaly_records(mlnx_counters_analysis.anomalies)
         pm_delta_anomalies = self._flatten_anomaly_records(pm_delta_analysis.anomalies)
@@ -504,8 +361,6 @@ class AnalysisService:
             ("temperature", temperature_anomalies),
             ("power", power_anomalies),
             ("routing", routing_anomalies),
-            ("port_health", port_health_anomalies),
-            ("links", links_anomalies),
             ("qos", qos_anomalies),
             ("mlnx_counters", mlnx_counters_anomalies),
             ("pm_delta", pm_delta_anomalies),
@@ -522,8 +377,6 @@ class AnalysisService:
             "temperature": temperature_anomalies,
             "power": power_anomalies,
             "routing": routing_anomalies,
-            "port_health": port_health_anomalies,
-            "links": links_anomalies,
             "qos": qos_anomalies,
             "mlnx_counters": mlnx_counters_anomalies,
             "pm_delta": pm_delta_anomalies,
@@ -544,6 +397,7 @@ class AnalysisService:
             "analysis": analysis_rows,
             "cable": cable_rows,
             "xmit": xmit_rows,
+            "link_oscillation": link_oscillation_rows,
             "ber": ber_rows,
             "hca": hca_rows,
             "fan": fan_rows,
@@ -552,8 +406,6 @@ class AnalysisService:
             "power": power_rows,
             "switch": switch_rows,
             "routing": routing_rows,
-            "port_health": port_health_rows,
-            "links": links_rows,
             "qos": qos_rows,
             "sm_info": sm_info_rows,
             "port_hierarchy": port_hierarchy_rows,
@@ -577,10 +429,10 @@ class AnalysisService:
             "credit_watchdog": credit_watchdog_rows,
             "pci_performance": pci_performance_rows,
             "ber_advanced": ber_advanced_rows,
-            "cable_enhanced": cable_enhanced_rows,
             "per_lane_performance": per_lane_performance_rows,
             "n2n_security": n2n_security_rows,
         }
+        dataset_totals = {name: len(rows) for name, rows in datasets.items()}
         filtered_datasets = {
             name: self._filter_anomalies(name, rows, anomaly_index_map.get(name))
             for name, rows in datasets.items()
@@ -596,8 +448,6 @@ class AnalysisService:
         power_rows = filtered_datasets["power"]
         switch_rows = filtered_datasets["switch"]
         routing_rows = filtered_datasets["routing"]
-        port_health_rows = filtered_datasets["port_health"]
-        links_rows = filtered_datasets["links"]
         qos_rows = filtered_datasets["qos"]
         sm_info_rows = filtered_datasets["sm_info"]
         port_hierarchy_rows = filtered_datasets["port_hierarchy"]
@@ -621,7 +471,6 @@ class AnalysisService:
         credit_watchdog_rows = filtered_datasets["credit_watchdog"]
         pci_performance_rows = filtered_datasets["pci_performance"]
         ber_advanced_rows = filtered_datasets["ber_advanced"]
-        cable_enhanced_rows = filtered_datasets["cable_enhanced"]
         per_lane_performance_rows = filtered_datasets["per_lane_performance"]
         n2n_security_rows = filtered_datasets["n2n_security"]
 
@@ -651,95 +500,28 @@ class AnalysisService:
             for issue in health_report.issues
         ]
 
-        analysis_total = len(analysis_rows)
-        cable_total = len(cable_rows)
-        xmit_total = len(xmit_rows)
-        ber_total = len(ber_rows)
-        hca_total = len(hca_rows)
-        fan_total = len(fan_rows)
-        histogram_total = len(histogram_rows)
-        temperature_total = len(temperature_rows)
-        power_total = len(power_rows)
-        switch_total = len(switch_rows)
-        routing_total = len(routing_rows)
-        port_health_total = len(port_health_rows)
-        links_total = len(links_rows)
-        qos_total = len(qos_rows)
-        sm_info_total = len(sm_info_rows)
-        port_hierarchy_total = len(port_hierarchy_rows)
-        mlnx_counters_total = len(mlnx_counters_rows)
-        pm_delta_total = len(pm_delta_rows)
-        vports_total = len(vports_rows)
-        pkey_total = len(pkey_rows)
-        system_info_total = len(system_info_rows)
-        extended_port_info_total = len(extended_port_info_rows)
-        ar_info_total = len(ar_info_rows)
-        sharp_total = len(sharp_rows)
-        fec_mode_total = len(fec_mode_rows)
-        phy_diagnostics_total = len(phy_diagnostics_rows)
-        neighbors_total = len(neighbors_rows)
-        buffer_histogram_total = len(buffer_histogram_rows)
-        extended_node_info_total = len(extended_node_info_rows)
-        extended_switch_info_total = len(extended_switch_info_rows)
-        power_sensors_total = len(power_sensors_rows)
-        routing_config_total = len(routing_config_rows)
-        temp_alerts_total = len(temp_alerts_rows)
-        credit_watchdog_total = len(credit_watchdog_rows)
-        pci_performance_total = len(pci_performance_rows)
-        ber_advanced_total = len(ber_advanced_rows)
-        cable_enhanced_total = len(cable_enhanced_rows)
-        per_lane_performance_total = len(per_lane_performance_rows)
-        n2n_security_total = len(n2n_security_rows)
         warnings_by_category = warnings_analysis.get("by_category", {})
         warnings_summary = warnings_analysis.get("summary", {})
 
+        def preview_full(name: str) -> List[Dict[str, object]]:
+            return self._preview_records(datasets.get(name, []))
+
+        def preview_issues(name: str) -> List[Dict[str, object]]:
+            return self._preview_records(filtered_datasets.get(name, []))
+
+        analysis_full_rows = datasets.get("analysis", [])
         payload = {
             "health": health,
-            "data": self._preview_records(analysis_rows),
-            "cable_data": self._preview_records(cable_rows),
-            "xmit_data": self._preview_records(xmit_rows),
-            "ber_data": self._preview_records(ber_rows),
-            "hca_data": self._preview_records(hca_rows),
-            "fan_data": self._preview_records(fan_rows),
-            "histogram_data": self._preview_records(histogram_rows),
-            "temperature_data": self._preview_records(temperature_rows),
-            "power_data": self._preview_records(power_rows),
-            "switch_data": self._preview_records(switch_rows),
-            "routing_data": self._preview_records(routing_rows),
-            "port_health_data": self._preview_records(port_health_rows),
-            "links_data": self._preview_records(links_rows),
-            "qos_data": self._preview_records(qos_rows),
-            "sm_info_data": self._preview_records(sm_info_rows),
-            "port_hierarchy_data": self._preview_records(port_hierarchy_rows),
-            "mlnx_counters_data": self._preview_records(mlnx_counters_rows),
-            "pm_delta_data": self._preview_records(pm_delta_rows),
-            "vports_data": self._preview_records(vports_rows),
-            "pkey_data": self._preview_records(pkey_rows),
-            "system_info_data": self._preview_records(system_info_rows),
-            "extended_port_info_data": self._preview_records(extended_port_info_rows),
-            "ar_info_data": self._preview_records(ar_info_rows),
-            "sharp_data": self._preview_records(sharp_rows),
-            "fec_mode_data": self._preview_records(fec_mode_rows),
-            "phy_diagnostics_data": self._preview_records(phy_diagnostics_rows),
-            "neighbors_data": self._preview_records(neighbors_rows),
-            "buffer_histogram_data": self._preview_records(buffer_histogram_rows),
-            "extended_node_info_data": self._preview_records(extended_node_info_rows),
-            "extended_switch_info_data": self._preview_records(extended_switch_info_rows),
-            "power_sensors_data": self._preview_records(power_sensors_rows),
-            "routing_config_data": self._preview_records(routing_config_rows),
-            "temp_alerts_data": self._preview_records(temp_alerts_rows),
-            "credit_watchdog_data": self._preview_records(credit_watchdog_rows),
-            "pci_performance_data": self._preview_records(pci_performance_rows),
-            "ber_advanced_data": self._preview_records(ber_advanced_rows),
-            "cable_enhanced_data": self._preview_records(cable_enhanced_rows),
-            "per_lane_performance_data": self._preview_records(per_lane_performance_rows),
-            "n2n_security_data": self._preview_records(n2n_security_rows),
+            "data": self._preview_records(analysis_full_rows),
+            "data_issue_rows": self._preview_records(analysis_rows),
+            "cable_summary": cable_summary,
             "temperature_summary": temperature_analysis.summary,
             "power_summary": power_analysis.summary,
             "switch_summary": switch_analysis.summary,
             "routing_summary": routing_analysis.summary,
-            "port_health_summary": port_health_analysis.summary,
-            "links_summary": links_analysis.summary,
+            "xmit_summary": getattr(xmit_analysis, "summary", {}),
+            "link_oscillation_summary": link_oscillation_analysis.summary,
+            "histogram_summary": getattr(histogram_analysis, "summary", {}),
             "qos_summary": qos_analysis.summary,
             "sm_info_summary": sm_info_analysis.summary,
             "port_hierarchy_summary": port_hierarchy_analysis.summary,
@@ -763,7 +545,6 @@ class AnalysisService:
             "credit_watchdog_summary": credit_watchdog_analysis.summary,
             "pci_performance_summary": pci_performance_analysis.summary,
             "ber_advanced_summary": ber_advanced_analysis.summary,
-            "cable_enhanced_summary": cable_enhanced_analysis.summary,
             "per_lane_performance_summary": per_lane_performance_analysis.summary,
             "n2n_security_summary": n2n_security_analysis.summary,
             "warnings_by_category": warnings_by_category,
@@ -771,46 +552,55 @@ class AnalysisService:
             "debug_stdout": brief_payload.get("debug_stdout", ""),
             "debug_stderr": brief_payload.get("debug_stderr", ""),
             "preview_row_limit": MAX_PREVIEW_ROWS,
-            "data_total_rows": analysis_total,
-            "cable_total_rows": cable_total,
-            "xmit_total_rows": xmit_total,
-            "ber_total_rows": ber_total,
-            "hca_total_rows": hca_total,
-            "fan_total_rows": fan_total,
-            "histogram_total_rows": histogram_total,
-            "temperature_total_rows": temperature_total,
-            "power_total_rows": power_total,
-            "switch_total_rows": switch_total,
-            "routing_total_rows": routing_total,
-            "port_health_total_rows": port_health_total,
-            "links_total_rows": links_total,
-            "qos_total_rows": qos_total,
-            "sm_info_total_rows": sm_info_total,
-            "port_hierarchy_total_rows": port_hierarchy_total,
-            "mlnx_counters_total_rows": mlnx_counters_total,
-            "pm_delta_total_rows": pm_delta_total,
-            "vports_total_rows": vports_total,
-            "pkey_total_rows": pkey_total,
-            "system_info_total_rows": system_info_total,
-            "extended_port_info_total_rows": extended_port_info_total,
-            "ar_info_total_rows": ar_info_total,
-            "sharp_total_rows": sharp_total,
-            "fec_mode_total_rows": fec_mode_total,
-            "phy_diagnostics_total_rows": phy_diagnostics_total,
-            "neighbors_total_rows": neighbors_total,
-            "buffer_histogram_total_rows": buffer_histogram_total,
-            "extended_node_info_total_rows": extended_node_info_total,
-            "extended_switch_info_total_rows": extended_switch_info_total,
-            "power_sensors_total_rows": power_sensors_total,
-            "routing_config_total_rows": routing_config_total,
-            "temp_alerts_total_rows": temp_alerts_total,
-            "credit_watchdog_total_rows": credit_watchdog_total,
-            "pci_performance_total_rows": pci_performance_total,
-            "ber_advanced_total_rows": ber_advanced_total,
-            "cable_enhanced_total_rows": cable_enhanced_total,
-            "per_lane_performance_total_rows": per_lane_performance_total,
-            "n2n_security_total_rows": n2n_security_total,
+            "data_total_rows": dataset_totals.get("analysis", len(analysis_full_rows)),
         }
+
+        dataset_aliases = {
+            "cable": "cable",
+            "xmit": "xmit",
+            "link_oscillation": "link_oscillation",
+            "ber": "ber",
+            "hca": "hca",
+            "fan": "fan",
+            "histogram": "histogram",
+            "temperature": "temperature",
+            "power": "power",
+            "switch": "switch",
+            "routing": "routing",
+            "qos": "qos",
+            "sm_info": "sm_info",
+            "port_hierarchy": "port_hierarchy",
+            "mlnx_counters": "mlnx_counters",
+            "pm_delta": "pm_delta",
+            "vports": "vports",
+            "pkey": "pkey",
+            "system_info": "system_info",
+            "extended_port_info": "extended_port_info",
+            "ar_info": "ar_info",
+            "sharp": "sharp",
+            "fec_mode": "fec_mode",
+            "phy_diagnostics": "phy_diagnostics",
+            "neighbors": "neighbors",
+            "buffer_histogram": "buffer_histogram",
+            "extended_node_info": "extended_node_info",
+            "extended_switch_info": "extended_switch_info",
+            "power_sensors": "power_sensors",
+            "routing_config": "routing_config",
+            "temp_alerts": "temp_alerts",
+            "credit_watchdog": "credit_watchdog",
+            "pci_performance": "pci_performance",
+            "ber_advanced": "ber_advanced",
+            "per_lane_performance": "per_lane_performance",
+            "n2n_security": "n2n_security",
+        }
+
+        for dataset_name, alias in dataset_aliases.items():
+            payload[f"{alias}_data"] = preview_full(dataset_name)
+            payload[f"{alias}_issue_rows"] = preview_issues(dataset_name)
+            payload[f"{alias}_total_rows"] = dataset_totals.get(
+                dataset_name, len(datasets.get(dataset_name, []))
+            )
+        payload["issues"] = issues
         return self._sanitize(payload)
 
     def _run_cable_service(self, target_dir: Path):
@@ -821,9 +611,19 @@ class AnalysisService:
         service = XmitService(dataset_root=target_dir)
         return service.run()
 
-    def _run_ber_service(self, target_dir: Path):
-        service = BerService(dataset_root=target_dir)
+    def _run_link_oscillation_service(self, target_dir: Path):
+        service = LinkOscillationService(dataset_root=target_dir)
         return service.run()
+
+    def _run_ber_service(self, target_dir: Path):
+        cached = self._get_cached_service_result("ber", target_dir)
+        if cached is not None:
+            logger.debug("Reusing cached BER analysis for dataset %s", target_dir)
+            return cached
+        service = BerService(dataset_root=target_dir)
+        result = service.run()
+        self._set_cached_service_result("ber", target_dir, result)
+        return result
 
     def _run_hca_service(self, target_dir: Path) -> Tuple[List[Dict[str, object]], pd.DataFrame]:
         service = HcaService(dataset_root=target_dir)
@@ -861,14 +661,6 @@ class AnalysisService:
 
     def _run_routing_service(self, target_dir: Path):
         service = RoutingService(dataset_root=target_dir)
-        return service.run()
-
-    def _run_port_health_service(self, target_dir: Path):
-        service = PortHealthService(dataset_root=target_dir)
-        return service.run()
-
-    def _run_links_service(self, target_dir: Path):
-        service = LinksService(dataset_root=target_dir)
         return service.run()
 
     def _run_qos_service(self, target_dir: Path):
@@ -963,10 +755,6 @@ class AnalysisService:
         service = BerAdvancedService(dataset_root=target_dir)
         return service.run()
 
-    def _run_cable_enhanced_service(self, target_dir: Path):
-        service = CableEnhancedService(dataset_root=target_dir)
-        return service.run()
-
     def _run_per_lane_performance_service(self, target_dir: Path):
         service = PerLanePerformanceService(dataset_root=target_dir)
         return service.run()
@@ -1024,18 +812,19 @@ class AnalysisService:
         rows: List[Dict[str, object]],
         anomaly_index: Optional[Set[Tuple[str, Optional[int]]]] = None,
     ) -> List[Dict[str, object]]:
-        if dataset_name in {"ber", "ber_advanced"}:
-            return rows
         if not rows:
             return []
+        preview = self._preview_records
+        if dataset_name in {"ber", "ber_advanced", "analysis", "link_oscillation"}:
+            return preview(rows)
         if anomaly_index:
             matched = [row for row in rows if self._row_matches_anomaly_index(row, anomaly_index)]
             if matched:
-                return matched
+                return preview(matched)
         heuristic_rows = [row for row in rows if self._row_has_anomaly_markers(row)]
         if heuristic_rows:
-            return heuristic_rows
-        return []
+            return preview(heuristic_rows)
+        return preview(rows)
 
     def _build_anomaly_index(self, anomaly_rows: List[Dict[str, object]]) -> Set[Tuple[str, Optional[int]]]:
         index: Set[Tuple[str, Optional[int]]] = set()

@@ -70,6 +70,7 @@ class AnomlyType(Enum):
     IBH_MLNX_COUNTER_WARNING = "MLNX Counter Warning"
     IBH_FEC_UNCORRECTABLE = "FEC Uncorrectable Blocks"
     IBH_RELAY_ERROR = "Switch Relay Error"
+    IBH_RECENT_REBOOT = "Frequent Host Reboot"
 
     def __str__(self) -> str:
         return f"{IBH_ANOMALY_AGG_COL} {self.value}"

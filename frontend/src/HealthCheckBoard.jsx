@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { CheckCircle, AlertTriangle, XCircle, ArrowRight, Filter } from 'lucide-react'
+import { CheckCircle, AlertTriangle, XCircle, ArrowRight, Filter, ChevronDown, ChevronRight } from 'lucide-react'
 import { HEALTH_CHECK_GROUPS, HEALTH_CHECK_DEFINITIONS, evaluateHealthChecks } from './healthCheckDefinitions'
 
 const STATUS_META = {
@@ -26,6 +26,7 @@ const STATUS_META = {
 const HealthCheckBoard = ({ payload, onSelectTab, resolveTabMeta }) => {
   const [filterMode, setFilterMode] = useState('all')
   const [groupFilter, setGroupFilter] = useState('all')
+  const [collapsedGroups, setCollapsedGroups] = useState({})
   const evaluations = useMemo(() => (payload ? evaluateHealthChecks(payload) : {}), [payload])
 
   if (!payload) {
@@ -88,6 +89,27 @@ const HealthCheckBoard = ({ payload, onSelectTab, resolveTabMeta }) => {
 
   const availableGroups = HEALTH_CHECK_GROUPS.filter(group => groupFilter === 'all' || group.key === groupFilter)
 
+  const toggleGroup = (key) => {
+    setCollapsedGroups(prev => ({
+      ...prev,
+      [key]: !prev[key],
+    }))
+  }
+
+  const isAllCollapsed = HEALTH_CHECK_GROUPS.every(group => collapsedGroups[group.key])
+
+  const handleCollapseAll = () => {
+    if (isAllCollapsed) {
+      setCollapsedGroups({})
+    } else {
+      const next = {}
+      HEALTH_CHECK_GROUPS.forEach(group => {
+        next[group.key] = true
+      })
+      setCollapsedGroups(next)
+    }
+  }
+
   const renderedGroups = availableGroups
     .map(group => {
       const cards = group.checks
@@ -106,10 +128,20 @@ const HealthCheckBoard = ({ payload, onSelectTab, resolveTabMeta }) => {
         return null
       }
 
+      const isCollapsed = !!collapsedGroups[group.key]
+      const ToggleIcon = isCollapsed ? ChevronRight : ChevronDown
+
       return (
         <div key={group.key} className="health-board-group">
           <div className="health-board-group-header">
-            <div>
+            <button
+              type="button"
+              className="collapse-toggle"
+              onClick={() => toggleGroup(group.key)}
+            >
+              <ToggleIcon size={16} />
+            </button>
+            <div className="group-text">
               <h3>{group.label}</h3>
               <p>{group.description}</p>
             </div>
@@ -117,7 +149,7 @@ const HealthCheckBoard = ({ payload, onSelectTab, resolveTabMeta }) => {
               {cards.length}/{group.checks.length}
             </div>
           </div>
-          <div className="health-card-grid">{cards}</div>
+          {!isCollapsed && <div className="health-card-grid">{cards}</div>}
         </div>
       )
     })
@@ -137,6 +169,12 @@ const HealthCheckBoard = ({ payload, onSelectTab, resolveTabMeta }) => {
           </select>
         </div>
         <div className="toolbar-right">
+          <button
+            type="button"
+            onClick={handleCollapseAll}
+          >
+            {isAllCollapsed ? '展开全部' : '收起全部'}
+          </button>
           <button
             type="button"
             className={filterMode === 'all' ? 'active' : ''}

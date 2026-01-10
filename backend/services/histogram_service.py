@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -17,6 +17,7 @@ from .topology_lookup import TopologyLookup
 class HistogramAnalysis:
     data: List[Dict[str, object]]
     anomalies: pd.DataFrame
+    summary: Dict[str, object] = field(default_factory=dict)
 
 
 class HistogramService:
@@ -31,7 +32,16 @@ class HistogramService:
     def run(self) -> HistogramAnalysis:
         df = self._load_dataframe()
         if df.empty:
-            return HistogramAnalysis(data=[], anomalies=pd.DataFrame(columns=IBH_ANOMALY_TBL_KEY))
+            empty_summary = {
+                "total_ports": 0,
+                "high_p99_ports": 0,
+                "upper_bucket_ports": 0,
+                "severe_tail_ports": 0,
+                "avg_median_us": 0.0,
+                "avg_p99_us": 0.0,
+                "top_outliers": [],
+            }
+            return HistogramAnalysis(data=[], anomalies=pd.DataFrame(columns=IBH_ANOMALY_TBL_KEY), summary=empty_summary)
         df = self._annotate_metrics(df)
         df = self._topology_lookup().annotate_ports(df, guid_col="NodeGUID", port_col="PortNumber")
         display_columns = [
@@ -47,7 +57,8 @@ class HistogramService:
         existing = [col for col in display_columns if col in df.columns]
         data = df[existing].to_dict(orient="records")
         anomalies = self._build_anomalies(df)
-        return HistogramAnalysis(data=data, anomalies=anomalies)
+        summary = self._build_summary(df)
+        return HistogramAnalysis(data=data, anomalies=anomalies, summary=summary)
 
     def _load_dataframe(self) -> pd.DataFrame:
         if self._df is not None:
@@ -141,7 +152,7 @@ class HistogramService:
         except (TypeError, ValueError):
             upper_ratio = 0.0
 
-        return ratio >= 5.0 or upper_ratio >= 0.2
+        return ratio >= 3.0 or upper_ratio >= 0.1
 
     def _build_anomalies(self, df: pd.DataFrame) -> pd.DataFrame:
         mask = df["RttOutlierFlag"].fillna(False)
@@ -176,6 +187,45 @@ class HistogramService:
 
         payload[str(AnomlyType.IBH_UNUSUAL_RTT_NUM)] = payload.apply(calculate_weight, axis=1)
         return payload[IBH_ANOMALY_TBL_KEY + [str(AnomlyType.IBH_UNUSUAL_RTT_NUM)]]
+
+    def _build_summary(self, df: pd.DataFrame) -> Dict[str, object]:
+        summary = {
+            "total_ports": int(len(df)),
+            "high_p99_ports": 0,
+            "upper_bucket_ports": 0,
+            "severe_tail_ports": 0,
+            "avg_median_us": 0.0,
+            "avg_p99_us": 0.0,
+            "top_outliers": [],
+        }
+        if df.empty:
+            return summary
+
+        ratio = pd.to_numeric(df.get("RttP99OverMedian"), errors="coerce").fillna(0.0)
+        upper = pd.to_numeric(df.get("RttUpperBucketRatio"), errors="coerce").fillna(0.0)
+        median = pd.to_numeric(df.get("RttMedianUs"), errors="coerce").fillna(0.0)
+        p99 = pd.to_numeric(df.get("RttP99Us"), errors="coerce").fillna(0.0)
+
+        summary["high_p99_ports"] = int((ratio >= 3.0).sum())
+        summary["upper_bucket_ports"] = int((upper >= 0.1).sum())
+        summary["severe_tail_ports"] = int((ratio >= 5.0).sum())
+        summary["avg_median_us"] = float(median.mean())
+        summary["avg_p99_us"] = float(p99.mean())
+
+        df_top = df.assign(__ratio=ratio).sort_values("__ratio", ascending=False).head(5)
+        summary["top_outliers"] = [
+            {
+                "node_name": row.get("Node Name") or row.get("NodeName") or row.get("NodeGUID"),
+                "node_guid": row.get("NodeGUID"),
+                "port_number": row.get("PortNumber"),
+                "ratio": float(row.get("__ratio", 0.0) or 0.0),
+                "upper_ratio": float(row.get("RttUpperBucketRatio") or 0.0),
+                "median_us": float(row.get("RttMedianUs") or 0.0),
+                "p99_us": float(row.get("RttP99Us") or 0.0),
+            }
+            for _, row in df_top.iterrows()
+        ]
+        return summary
 
     def _find_db_csv(self) -> Path:
         matches = sorted(self.dataset_root.glob("*.db_csv"))
