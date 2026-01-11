@@ -10,8 +10,6 @@ import CongestionAnalysis from './CongestionAnalysis'
 import LinkOscillation from './LinkOscillation'
 import HcaAnalysis from './HcaAnalysis'
 import FanAnalysis from './FanAnalysis'
-import TemperatureAnalysis from './TemperatureAnalysis'
-import PowerAnalysis from './PowerAnalysis'
 import SwitchesAnalysis from './SwitchesAnalysis'
 import RoutingAnalysis from './RoutingAnalysis'
 import QosAnalysis from './QosAnalysis'
@@ -36,7 +34,6 @@ import RoutingConfigAnalysis from './RoutingConfigAnalysis'
 import TempAlertsAnalysis from './TempAlertsAnalysis'
 import CreditWatchdogAnalysis from './CreditWatchdogAnalysis'
 import PciPerformanceAnalysis from './PciPerformanceAnalysis'
-import BerAdvancedAnalysis from './BerAdvancedAnalysis'
 import PerLanePerformanceAnalysis from './PerLanePerformanceAnalysis'
 import N2nSecurityAnalysis from './N2nSecurityAnalysis'
 import LatencyAnalysis from './LatencyAnalysis'
@@ -109,13 +106,10 @@ const TAB_ICON_MAP = {
   latency: Clock3,
   per_lane_performance: Layers,
   ber: ShieldCheck,
-  ber_advanced: BarChart3,
   hca: Cpu,
   system_info: Info,
   sm_info: Settings,
   fan: FanIcon,
-  temperature: Thermometer,
-  power: Zap,
   power_sensors: Zap,
   temp_alerts: ThermometerSun,
   switches: Network,
@@ -187,189 +181,10 @@ const buildActionPlan = (issues = []) => {
   return actions
 }
 
-// 添加问题摘要组件 - 增强版，集成知识库
-function ProblemSummary({ title, problems, totalChecked, dataType }) {
-  const [expandedProblems, setExpandedProblems] = useState({})
-
-  const toggleProblem = (idx) => {
-    setExpandedProblems(prev => ({
-      ...prev,
-      [idx]: !prev[idx]
-    }))
-  }
-
-  if (!problems || problems.length === 0) {
-    return (
-      <div style={{
-        padding: '16px',
-        marginBottom: '20px',
-        background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-        borderRadius: '8px',
-        border: '1px solid #059669'
-      }}>
-        <h3 style={{ margin: '0 0 8px 0', color: '#fff', fontSize: '1.1rem' }}>
-          ✅ {title} - 未发现问题
-        </h3>
-        <p style={{ margin: 0, color: '#d1fae5', fontSize: '0.95rem' }}>
-          已检查 {totalChecked} 个端口，所有指标正常
-        </p>
-      </div>
-    )
-  }
-
-  const criticalCount = problems.filter(p => p.severity === 'critical').length
-  const warningCount = problems.filter(p => p.severity === 'warning').length
-
-  return (
-    <div style={{
-      padding: '16px',
-      marginBottom: '20px',
-      background: criticalCount > 0
-        ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)'
-        : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-      borderRadius: '8px',
-      border: `1px solid ${criticalCount > 0 ? '#dc2626' : '#d97706'}`
-    }}>
-      <h3 style={{ margin: '0 0 12px 0', color: '#fff', fontSize: '1.1rem' }}>
-        {criticalCount > 0 ? '🔴' : '⚠️'} {title} - 发现 {problems.length} 类问题
-      </h3>
-      <div style={{ display: 'flex', gap: '12px', marginBottom: '12px' }}>
-        {criticalCount > 0 && (
-          <span style={{
-            padding: '4px 12px',
-            background: 'rgba(0,0,0,0.3)',
-            borderRadius: '12px',
-            color: '#fff',
-            fontSize: '0.9rem'
-          }}>
-            🔴 {criticalCount} 个严重问题
-          </span>
-        )}
-        {warningCount > 0 && (
-          <span style={{
-            padding: '4px 12px',
-            background: 'rgba(0,0,0,0.3)',
-            borderRadius: '12px',
-            color: '#fff',
-            fontSize: '0.9rem'
-          }}>
-            ⚠️ {warningCount} 个警告
-          </span>
-        )}
-      </div>
-
-      {/* 问题列表 - 可展开查看知识库详情 */}
-      <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '6px', padding: '8px' }}>
-        {problems.map((problem, idx) => {
-          const isExpanded = expandedProblems[idx]
-          const kb = problem.kbType ? getErrorExplanation(problem.kbType) : null
-
-          return (
-            <div key={idx} style={{ marginBottom: idx < problems.length - 1 ? '8px' : 0 }}>
-              <div
-                onClick={() => kb && toggleProblem(idx)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '8px 12px',
-                  background: 'rgba(255,255,255,0.15)',
-                  borderRadius: '4px',
-                  cursor: kb ? 'pointer' : 'default'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ color: '#fff' }}>
-                    {problem.severity === 'critical' ? '🔴' : '⚠️'}
-                  </span>
-                  <span style={{ color: '#fff', fontSize: '0.95rem' }}>{problem.summary}</span>
-                </div>
-                {kb && (
-                  <span style={{ color: 'rgba(255,255,255,0.7)' }}>
-                    {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                  </span>
-                )}
-              </div>
-
-              {/* 展开的知识库详情 */}
-              {isExpanded && kb && (
-                <div style={{
-                  marginTop: '4px',
-                  padding: '12px',
-                  background: 'rgba(255,255,255,0.95)',
-                  borderRadius: '4px',
-                  color: '#1f2937'
-                }}>
-                  <h4 style={{ margin: '0 0 8px 0', fontSize: '1rem', color: '#374151' }}>
-                    <BookOpen size={14} style={{ marginRight: '6px' }} />
-                    {kb.title} ({kb.titleEn})
-                  </h4>
-
-                  <p style={{ margin: '0 0 12px 0', fontSize: '0.9rem', color: '#4b5563' }}>
-                    <strong>为什么重要：</strong>{kb.why_it_matters}
-                  </p>
-
-                  <div style={{ marginBottom: '12px' }}>
-                    <strong style={{ fontSize: '0.85rem', color: '#374151' }}>可能原因：</strong>
-                    <ul style={{ margin: '4px 0 0 0', paddingLeft: '20px', fontSize: '0.85rem', color: '#4b5563' }}>
-                      {kb.likely_causes?.slice(0, 3).map((cause, i) => (
-                        <li key={i}>{cause}</li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  <div style={{ marginBottom: '8px' }}>
-                    <strong style={{ fontSize: '0.85rem', color: '#374151' }}>建议操作：</strong>
-                    <ol style={{ margin: '4px 0 0 0', paddingLeft: '20px', fontSize: '0.85rem', color: '#4b5563' }}>
-                      {kb.recommended_actions?.slice(0, 4).map((action, i) => (
-                        <li key={i}>{action}</li>
-                      ))}
-                    </ol>
-                  </div>
-
-                  {kb.mttr_estimate && (
-                    <p style={{ margin: '8px 0 0 0', fontSize: '0.8rem', color: '#6b7280' }}>
-                      <Clock3 size={12} style={{ marginRight: '4px' }} />
-                      预计修复时间: {kb.mttr_estimate}
-                    </p>
-                  )}
-
-                  {kb.reference && (
-                    <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: '#6b7280' }}>
-                      参考文档: {kb.reference}
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
 const resolveTabMeta = (key) => TAB_LOOKUP[key] || { label: key, icon: Activity }
 
-const combineBerRows = (berData = [], berAdvancedData = []) => {
-  const allRows = [...ensureArray(berData).map(row => ({ ...row, source: 'basic' }))]
-
-  ensureArray(berAdvancedData).forEach(row => {
-    const idx = allRows.findIndex(
-      item => item.NodeGUID === row.NodeGUID && item.PortNumber === row.PortNumber
-    )
-    if (idx === -1) {
-      allRows.push({ ...row, source: 'advanced' })
-    } else {
-      allRows[idx] = { ...allRows[idx], ...row, source: 'merged' }
-    }
-  })
-
-  return allRows
-}
-
-const summarizeBerHealth = (berData = [], berAdvancedData = []) => {
-  const rows = combineBerRows(berData, berAdvancedData)
+const summarizeBerHealth = (berData = []) => {
+  const rows = ensureArray(berData)
   const critical = []
   const warning = []
   const noThreshold = []
@@ -779,8 +594,6 @@ function App() {
       hca_data,
       fan_data,
       histogram_data,
-      temperature_data,
-      power_data,
       switch_data,
       routing_data,
       qos_data,
@@ -805,15 +618,13 @@ function App() {
       temp_alerts_data,
       credit_watchdog_data,
       pci_performance_data,
-      ber_advanced_data,
       per_lane_performance_data,
       n2n_security_data,
       cable_summary,
       link_oscillation_summary,
       xmit_summary,
       histogram_summary,
-      temperature_summary,
-      power_summary,
+      fan_summary,
       switch_summary,
       routing_summary,
       qos_summary,
@@ -838,7 +649,6 @@ function App() {
       temp_alerts_summary,
       credit_watchdog_summary,
       pci_performance_summary,
-      ber_advanced_summary,
       per_lane_performance_summary,
       n2n_security_summary,
       warnings_by_category,
@@ -852,8 +662,6 @@ function App() {
       hca_total_rows,
       fan_total_rows,
       histogram_total_rows,
-      temperature_total_rows,
-      power_total_rows,
       switch_total_rows,
       routing_total_rows,
       qos_total_rows,
@@ -878,7 +686,6 @@ function App() {
       temp_alerts_total_rows,
       credit_watchdog_total_rows,
       pci_performance_total_rows,
-      ber_advanced_total_rows,
       per_lane_performance_total_rows,
       n2n_security_total_rows,
     } = result.data
@@ -890,7 +697,7 @@ function App() {
     switch (activeTab) {
       case 'overview': {
         const actionPlan = buildActionPlan(health?.issues || [])
-        const berSnapshot = summarizeBerHealth(ber_data, ber_advanced_data)
+        const berSnapshot = summarizeBerHealth(ber_data)
         const berTopList = berSnapshot.topCritical.length > 0 ? berSnapshot.topCritical : berSnapshot.topWarning
         const warningCategories = Object.entries(warnings_by_category || {})
           .map(([category, entries]) => {
@@ -1111,399 +918,223 @@ function App() {
       case 'cable': {
         return (
           <div className="scroll-area">
-            <div className="card">
-              <h2>📡 线缆与光模块健康分析</h2>
-              <p>光模块温度、光功率、线缆规格完整分析</p>
-              <CableAnalysis cableData={cable_data} summary={cable_summary} />
-            </div>
+            <CableAnalysis cableData={cable_data} summary={cable_summary} />
           </div>
         )
       }
       case 'link_oscillation': {
         return (
           <div className="scroll-area">
-            <div className="card">
-              <h2>🔁 链路震荡</h2>
-              <p>基于 PM_INFO LinkDownedCounter 的双端口路径视图，帮助定位频繁抖动的链路。</p>
-              <LinkOscillation
-                paths={link_oscillation_data}
-                summary={link_oscillation_summary}
-              />
-            </div>
+            <LinkOscillation
+              paths={link_oscillation_data}
+              summary={link_oscillation_summary}
+            />
           </div>
         )
       }
       case 'xmit': {
         return (
           <div className="scroll-area">
-            <div className="card">
-              <h2>🚦 拥塞与错误分析 (Xmit)</h2>
-              <p>端口等待时间、FECN/BECN拥塞通知、链路稳定性完整分析</p>
-              <CongestionAnalysis xmitData={xmit_data} summary={xmit_summary} />
-            </div>
+            <CongestionAnalysis xmitData={xmit_data} summary={xmit_summary} />
           </div>
         )
       }
       case 'ber': {
-        const berProblems = ensureArray(ber_data).filter(row => {
-          const severity = (row.SymbolBERSeverity || row.Severity || '').toLowerCase()
-          return severity === 'critical' || severity === 'warning'
-        })
-        const berProblemCards = berProblems.map(row => {
-          const severity = (row.SymbolBERSeverity || row.Severity || '').toLowerCase()
-          const node = row['Node Name'] || row.NodeName || row.NodeGUID || 'Unknown'
-          const port = row.PortNumber || row['Port Number'] || 'N/A'
-          const raw = row['Raw BER'] || row.RawBER || row.rawBer || 'N/A'
-          const effective = row['Effective BER'] || row.EffectiveBER || row.effectiveBer || 'N/A'
-          const symbol = row['Symbol BER'] || row.SymbolBER || row.symbolBer || 'N/A'
-          return {
-            severity,
-            summary: `${node} - 端口 ${port} BER 超过阈值`,
-            kbType: severity === 'critical' ? 'BER_CRITICAL' : 'BER_WARNING',
-            node,
-            port,
-            raw,
-            effective,
-            symbol,
-          }
-        })
-
         return (
           <div className="scroll-area">
-            <div className="card">
-              <h2>📊 误码率 (BER) 健康分析</h2>
-              <p>Symbol BER、Effective BER、FEC纠正活动完整分析</p>
-
-              <ProblemSummary
-                title="🚦 BER 问题摘要"
-                problems={berProblemCards}
-                totalChecked={ber_data?.length || 0}
-                dataType="ber"
-              />
-
-              <BERAnalysis
-                berData={ber_data}
-                berAdvancedData={ber_advanced_data}
-                perLaneData={per_lane_performance_data}
-                berAdvancedSummary={ber_advanced_summary}
-              />
-            </div>
+            <BERAnalysis
+              berData={ber_data}
+            />
           </div>
         )
       }
       case 'hca': {
         return (
           <div className="scroll-area">
-            <div className="card">
-              <h2>Device & Firmware Analysis</h2>
-              <p>Firmware version inconsistencies and device anomalies.</p>
               <HcaAnalysis
                 hcaData={hca_data}
                 firmwareWarnings={firmwareWarnings}
                 pciWarnings={pciWarnings}
                 summary={null}
               />
-            </div>
           </div>
         )
       }
       case 'latency': {
         return (
           <div className="scroll-area">
-            <div className="card">
-              <h2>Latency Histogram</h2>
-              <p>RTT distribution and heavy-tail detection from ibdiagnet histograms.</p>
               <LatencyAnalysis
                 histogramData={histogram_data}
                 summary={histogram_summary}
               />
-            </div>
           </div>
         )
       }
       case 'fan': {
         return (
           <div className="scroll-area">
-            <div className="card">
-              <h2>Fan &amp; Chassis Health</h2>
-              <p>Fan speed deviations based on FANS_SPEED/THRESHOLD tables.</p>
               <FanAnalysis fanData={fan_data} summary={fan_summary} />
-            </div>
-          </div>
-        )
-      }
-      case 'temperature': {
-        return (
-          <div className="scroll-area">
-            <div className="card">
-              <h2>Temperature Sensors</h2>
-              <p>Switch and device temperature monitoring from TEMPERATURE_SENSORS table.</p>
-              <TemperatureAnalysis temperatureData={temperature_data} summary={temperature_summary} />
-            </div>
-          </div>
-        )
-      }
-      case 'power': {
-        return (
-          <div className="scroll-area">
-            <div className="card">
-              <h2>Power Supplies</h2>
-              <p>Power supply unit status and health from POWER_SUPPLIES table.</p>
-              <PowerAnalysis powerData={power_data} summary={power_summary} />
-            </div>
           </div>
         )
       }
       case 'switches': {
         return (
           <div className="scroll-area">
-            <div className="card">
-              <h2>Switch Information</h2>
-              <p>Switch-level configuration and adaptive routing status.</p>
               <SwitchesAnalysis switchData={switch_data} summary={switch_summary} />
-            </div>
           </div>
         )
       }
       case 'routing': {
         return (
           <div className="scroll-area">
-            <div className="card">
-              <h2>Adaptive Routing Analysis</h2>
-              <p>RN counters, HBF statistics, and fast recovery status.</p>
               <RoutingAnalysis routingData={routing_data} summary={routing_summary} />
-            </div>
           </div>
         )
       }
       case 'qos': {
         return (
           <div className="scroll-area">
-            <div className="card">
-              <h2>QoS / VL Arbitration</h2>
-              <p>Virtual Lane arbitration configuration and weight distribution analysis.</p>
               <QosAnalysis qosData={qos_data} summary={qos_summary} />
-            </div>
           </div>
         )
       }
       case 'sm_info': {
         return (
           <div className="scroll-area">
-            <div className="card">
-              <h2>Subnet Manager</h2>
-              <p>SM state, priority, and master/standby configuration.</p>
               <SmInfoAnalysis smInfoData={sm_info_data} summary={sm_info_summary} />
-            </div>
           </div>
         )
       }
       case 'port_hierarchy': {
         return (
           <div className="scroll-area">
-            <div className="card">
-              <h2>Port Hierarchy</h2>
-              <p>Network topology hierarchy and port tier/role information.</p>
               <PortHierarchyAnalysis portHierarchyData={port_hierarchy_data} summary={port_hierarchy_summary} />
-            </div>
           </div>
         )
       }
       case 'mlnx_counters': {
         return (
           <div className="scroll-area">
-            <div className="card">
-              <h2>Mellanox Counters (MLNX_CNTRS_INFO)</h2>
-              <p>RNR retries, timeouts, and Queue Pair error analysis.</p>
               <MlnxCountersAnalysis mlnxCountersData={mlnx_counters_data} summary={mlnx_counters_summary} />
-            </div>
           </div>
         )
       }
       case 'pm_delta': {
         return (
           <div className="scroll-area">
-            <div className="card">
-              <h2>Performance Monitor Delta (PM_DELTA)</h2>
-              <p>Real-time counter changes during ibdiagnet run: FEC activity, traffic, and active errors.</p>
               <PmDeltaAnalysis pmDeltaData={pm_delta_data} summary={pm_delta_summary} />
-            </div>
           </div>
         )
       }
       case 'vports': {
         return (
           <div className="scroll-area">
-            <div className="card">
-              <h2>Virtual Ports (SR-IOV)</h2>
-              <p>Virtual node and port analysis for SR-IOV virtualization deployments.</p>
               <VportsAnalysis vportsData={vports_data} summary={vports_summary} />
-            </div>
           </div>
         )
       }
       case 'pkey': {
         return (
           <div className="scroll-area">
-            <div className="card">
-              <h2>Partition Keys (PKEY)</h2>
-              <p>Network isolation and security partitioning configuration.</p>
               <PkeyAnalysis pkeyData={pkey_data} summary={pkey_summary} />
-            </div>
           </div>
         )
       }
       case 'system_info': {
         return (
           <div className="scroll-area">
-            <div className="card">
-              <h2>System Information</h2>
-              <p>Hardware inventory, serial numbers, and ibdiagnet run metadata.</p>
               <SystemInfoAnalysis systemInfoData={system_info_data} summary={system_info_summary} />
-            </div>
           </div>
         )
       }
       case 'extended_port_info': {
         return (
           <div className="scroll-area">
-            <div className="card">
-              <h2>Extended Port Info</h2>
-              <p>Bandwidth utilization, unhealthy reasons, and FEC modes per speed.</p>
               <ExtendedPortInfoAnalysis extendedPortInfoData={extended_port_info_data} summary={extended_port_info_summary} />
-            </div>
           </div>
         )
       }
       case 'ar_info': {
         return (
           <div className="scroll-area">
-            <div className="card">
-              <h2>Adaptive Routing (AR)</h2>
-              <p>AR, Fast Recovery (FR), and Hash-Based Forwarding (HBF) configuration.</p>
               <ArInfoAnalysis arInfoData={ar_info_data} summary={ar_info_summary} />
-            </div>
           </div>
         )
       }
       case 'sharp': {
         return (
           <div className="scroll-area">
-            <div className="card">
-              <h2>SHARP (Scalable Hierarchical Aggregation)</h2>
-              <p>SHARP aggregation nodes for AI/ML collective operations.</p>
               <SharpAnalysis sharpData={sharp_data} summary={sharp_summary} />
-            </div>
           </div>
         )
       }
       case 'fec_mode': {
         return (
           <div className="scroll-area">
-            <div className="card">
-              <h2>FEC Mode Configuration</h2>
-              <p>Forward Error Correction support and enablement per speed.</p>
               <FecModeAnalysis fecModeData={fec_mode_data} summary={fec_mode_summary} />
-            </div>
           </div>
         )
       }
       case 'phy_diagnostics': {
         return (
           <div className="scroll-area">
-            <div className="card">
-              <h2>Physical Layer Diagnostics</h2>
-              <p>PHY-level signal integrity and diagnostic data.</p>
               <PhyDiagnosticsAnalysis phyDiagnosticsData={phy_diagnostics_data} summary={phy_diagnostics_summary} />
-            </div>
           </div>
         )
       }
       case 'neighbors': {
         return (
           <div className="scroll-area">
-            <div className="card">
-              <h2>Neighbors Topology</h2>
-              <p>Neighbor relationships and link properties for topology analysis.</p>
               <NeighborsAnalysis neighborsData={neighbors_data} summary={neighbors_summary} />
-            </div>
           </div>
         )
       }
       case 'buffer_histogram': {
         return (
           <div className="scroll-area">
-            <div className="card">
-              <h2>Buffer Histograms</h2>
-              <p>Buffer congestion analysis for bottleneck detection.</p>
               <BufferHistogramAnalysis bufferHistogramData={buffer_histogram_data} summary={buffer_histogram_summary} />
-            </div>
           </div>
         )
       }
       case 'extended_node_info': {
         return (
           <div className="scroll-area">
-            <div className="card">
-              <h2>Extended Node Information</h2>
-              <p>Extended node attributes and SMP capabilities.</p>
               <ExtendedNodeInfoAnalysis extendedNodeInfoData={extended_node_info_data} summary={extended_node_info_summary} />
-            </div>
           </div>
         )
       }
       case 'extended_switch_info': {
         return (
           <div className="scroll-area">
-            <div className="card">
-              <h2>Extended Switch Information</h2>
-              <p>Switch-specific capabilities and LFT/multicast capacity.</p>
               <ExtendedSwitchInfoAnalysis extendedSwitchInfoData={extended_switch_info_data} summary={extended_switch_info_summary} />
-            </div>
           </div>
         )
       }
       case 'power_sensors': {
         return (
           <div className="scroll-area">
-            <div className="card">
-              <h2>Power Sensors</h2>
-              <p>Individual power sensor readings for detailed power monitoring.</p>
               <PowerSensorsAnalysis powerSensorsData={power_sensors_data} summary={power_sensors_summary} />
-            </div>
           </div>
         )
       }
       case 'routing_config': {
         return (
           <div className="scroll-area">
-            <div className="card">
-              <h2>HBF/PFRN Routing Configuration</h2>
-              <p>Hash-Based Forwarding and Precise Forwarding Routing Notification config.</p>
               <RoutingConfigAnalysis routingConfigData={routing_config_data} summary={routing_config_summary} />
-            </div>
           </div>
         )
       }
       case 'temp_alerts': {
         return (
           <div className="scroll-area">
-            <div className="card">
-              <h2>Temperature Alerts</h2>
-              <p>Temperature threshold configuration and alert status.</p>
               <TempAlertsAnalysis tempAlertsData={temp_alerts_data} summary={temp_alerts_summary} />
-            </div>
           </div>
         )
       }
       case 'credit_watchdog': {
         return (
           <div className="scroll-area">
-            <div className="card">
-              <h2>Credit Watchdog Timeouts</h2>
-              <p>Flow control credit watchdog timeout counters.</p>
               <CreditWatchdogAnalysis creditWatchdogData={credit_watchdog_data} summary={credit_watchdog_summary} />
-            </div>
           </div>
         )
       }
@@ -1514,17 +1145,6 @@ function App() {
               <h2>PCIe Performance</h2>
               <p>PCIe generation, bandwidth, and degradation analysis.</p>
               <PciPerformanceAnalysis pciPerformanceData={pci_performance_data} summary={pci_performance_summary} />
-            </div>
-          </div>
-        )
-      }
-      case 'ber_advanced': {
-        return (
-          <div className="scroll-area">
-            <div className="card">
-              <h2>BER Advanced Analysis</h2>
-              <p>Advanced bit error rate analysis with FEC statistics.</p>
-              <BerAdvancedAnalysis berAdvancedData={ber_advanced_data} summary={ber_advanced_summary} />
             </div>
           </div>
         )

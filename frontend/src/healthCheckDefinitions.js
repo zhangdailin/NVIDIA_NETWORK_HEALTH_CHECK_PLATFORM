@@ -72,7 +72,7 @@ const HEALTH_CHECK_GROUPS = [
     key: 'sensors',
     label: '传感器与电源',
     description: '风扇/温度/功耗相关传感器',
-    checks: ['fan', 'temperature', 'power', 'power_sensors', 'temp_alerts'],
+    checks: ['fan', 'power_sensors', 'temp_alerts'],
   },
   {
     key: 'routing',
@@ -232,24 +232,6 @@ const HEALTH_CHECK_DEFINITIONS = {
     totalKey: 'fan_total_rows',
     summaryKey: null,
     description: '风扇转速与告警',
-  },
-  temperature: {
-    key: 'temperature',
-    label: 'Temperature',
-    group: 'sensors',
-    dataKey: 'temperature_issue_rows',
-    totalKey: 'temperature_total_rows',
-    summaryKey: 'temperature_summary',
-    description: '温度传感器与热点',
-  },
-  power: {
-    key: 'power',
-    label: 'Power',
-    group: 'sensors',
-    dataKey: 'power_issue_rows',
-    totalKey: 'power_total_rows',
-    summaryKey: 'power_summary',
-    description: '设备功耗与电源冗余',
   },
   power_sensors: {
     key: 'power_sensors',

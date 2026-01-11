@@ -1,15 +1,6 @@
 import { Activity, AlertTriangle, ArrowRightLeft, RefreshCw, Shield } from 'lucide-react'
-import DataTable from './DataTable'
-import { ensureArray, toFiniteNumber } from './analysisUtils'
-
-const formatCount = (value) => {
-  const num = Number(value)
-  if (!Number.isFinite(num)) return '—'
-  if (Math.abs(num) >= 1000) {
-    return num.toLocaleString('en-US', { maximumFractionDigits: 1 })
-  }
-  return num.toLocaleString('en-US', { maximumFractionDigits: num % 1 === 0 ? 0 : 2 })
-}
+import UnifiedAnalysisPage from './UnifiedAnalysisPage'
+import { ensureArray, toFiniteNumber, formatCount } from './analysisUtils'
 
 const resolveLinkDownCount = (row, suffix) => {
   if (!row) return 0
@@ -49,277 +40,183 @@ const endpointFromRow = (row, suffix) => {
 
 function LinkOscillation({ paths, summary }) {
   const rows = ensureArray(paths)
-  const previewSeverity = rows.reduce(
-    (acc, row) => {
-      const severity = String(row?.Severity || '').toLowerCase()
-      if (severity === 'critical') acc.critical += 1
-      else if (severity === 'warning') acc.warning += 1
-      else acc.info += 1
-      return acc
-    },
-    { critical: 0, warning: 0, info: 0 }
-  )
 
-  const stats = {
-    totalPaths: Number.isFinite(summary?.total_paths) ? summary.total_paths : rows.length,
-    previewRows: Number.isFinite(summary?.preview_rows) ? summary.preview_rows : rows.length,
-    criticalPaths: Number.isFinite(summary?.critical_paths) ? summary.critical_paths : previewSeverity.critical,
-    warningPaths: Number.isFinite(summary?.warning_paths) ? summary.warning_paths : previewSeverity.warning,
-    maxLinkFlaps: Number.isFinite(summary?.max_link_flaps)
-      ? summary.max_link_flaps
-      : Number(rows[0]?.TotalLinkFlaps) || 0,
+  // 定义严重度判断逻辑
+  const getSeverity = (row) => {
+    const severity = String(row?.Severity || '').toLowerCase()
+    if (severity === 'critical' || severity === 'error') {
+      return 'critical'
+    }
+    if (severity === 'warning' || severity === 'warn') {
+      return 'warning'
+    }
+
+    // 根据 LinkDownedCounter 总数判断
+    const totalFlaps = Number(row.TotalLinkFlaps) || 0
+    if (totalFlaps >= 100) return 'critical'
+    if (totalFlaps >= 20) return 'warning'
+    return 'info'
   }
+
+  // 定义问题描述逻辑
+  const getIssueReason = (row) => {
+    const totalFlaps = Number(row.TotalLinkFlaps) || 0
+    const node1LinkDown = resolveLinkDownCount(row, 1)
+    const node2LinkDown = resolveLinkDownCount(row, 2)
+
+    if (totalFlaps >= 100) {
+      return `严重链路震荡 (${formatCount(totalFlaps)} 次)`
+    }
+    if (totalFlaps >= 20) {
+      return `链路震荡 (${formatCount(totalFlaps)} 次)`
+    }
+    if (totalFlaps > 0) {
+      return `链路抖动 (${formatCount(totalFlaps)} 次)`
+    }
+    return `Node1: ${node1LinkDown}, Node2: ${node2LinkDown}`
+  }
+
+  // 计算统计
+  const criticalPaths = rows.filter(r => getSeverity(r) === 'critical').length
+  const warningPaths = rows.filter(r => getSeverity(r) === 'warning').length
+  const infoPaths = rows.filter(r => getSeverity(r) === 'info').length
+
+  // 指标卡片配置
+  const totalPaths = summary?.total_paths ?? rows.length
+  const previewRows = summary?.preview_rows ?? rows.length
+  const maxLinkFlaps = summary?.max_link_flaps ?? ((rows[0] ? Number(rows[0].TotalLinkFlaps) : 0) || 0)
 
   const metricCards = [
     {
       key: 'total',
       label: '检测到的路径',
-      value: stats.totalPaths,
+      value: totalPaths,
       description: 'LinkDownedCounter > 0 的唯一端到端路径',
       icon: Activity,
     },
     {
       key: 'preview',
       label: '前端预览行数',
-      value: stats.previewRows,
+      value: previewRows,
       description: '最多展示 200 条高频震荡路径',
       icon: RefreshCw,
     },
     {
       key: 'critical',
       label: '严重链路 (≥100 次)',
-      value: stats.criticalPaths,
+      value: summary?.critical_paths ?? criticalPaths,
       description: '持续抖动，需要优先处理',
       icon: AlertTriangle,
     },
     {
       key: 'warning',
       label: '告警链路 (20-99 次)',
-      value: stats.warningPaths,
+      value: summary?.warning_paths ?? warningPaths,
       description: '存在频繁 flap 迹象',
       icon: Shield,
     },
   ]
 
-  const severityChips = [
+  // 预览表列配置
+  const previewColumns = [
+    { key: 'IssueSeverity', label: '严重度' },
+    { key: 'IssueReason', label: '问题描述' },
     {
-      key: 'critical',
-      label: '严重',
-      color: '#b91c1c',
-      background: '#fee2e2',
-      total: stats.criticalPaths,
-      preview: previewSeverity.critical,
+      key: 'Path',
+      label: '路径',
+      render: (row) => buildPathLabel(row),
     },
     {
-      key: 'warning',
-      label: '警告',
-      color: '#92400e',
-      background: '#fef3c7',
-      total: stats.warningPaths,
-      preview: previewSeverity.warning,
+      key: 'TotalLinkFlaps',
+      label: '总震荡次数',
+      render: (row) => formatCount(row.TotalLinkFlaps || 0),
     },
     {
-      key: 'info',
-      label: '信息/其他',
-      color: '#0f172a',
-      background: '#e2e8f0',
-      total: previewSeverity.info,
-      preview: previewSeverity.info,
+      key: 'Node1LinkDown',
+      label: 'Node1 LinkDown',
+      render: (row) => formatCount(resolveLinkDownCount(row, 1)),
+    },
+    {
+      key: 'Node2LinkDown',
+      label: 'Node2 LinkDown',
+      render: (row) => formatCount(resolveLinkDownCount(row, 2)),
     },
   ]
 
-  const topRow = rows[0]
-  const highlightedPath = topRow
-    ? {
-        endpoints: [endpointFromRow(topRow, 1), endpointFromRow(topRow, 2)],
-        totalFlaps: Number(topRow.TotalLinkFlaps) || stats.maxLinkFlaps,
-      }
-    : summary?.top_path
-      ? {
-          endpoints: [
-            { name: summary.top_path.node_a || 'Node A' },
-            { name: summary.top_path.node_b || 'Node B' },
-          ],
-          totalFlaps: Number(summary.top_path.total_flaps) || stats.maxLinkFlaps,
-        }
-      : null
+  // 为数据添加格式化字段
+  const enrichedData = rows.map(row => ({
+    ...row,
+    Path: buildPathLabel(row),
+    Node1LinkDown: resolveLinkDownCount(row, 1),
+    Node2LinkDown: resolveLinkDownCount(row, 2),
+  }))
 
-  const previewRows = rows.slice(0, 10)
-  const tableRows = rows.map(row => {
-    const node1LinkDown = resolveLinkDownCount(row, 1)
-    const node2LinkDown = resolveLinkDownCount(row, 2)
-    return {
-      Path: buildPathLabel(row),
-      Node1LinkDown: node1LinkDown,
-      Node2LinkDown: node2LinkDown,
-      ...row,
-    }
-  })
+  // 优先显示的列
+  const preferredColumns = [
+    'Path',
+    'TotalLinkFlaps',
+    'Node1LinkDown',
+    'Node2LinkDown',
+    'NodeDesc1',
+    'PortNum1',
+    'NodeDesc2',
+    'PortNum2',
+  ]
 
-  if (!rows.length) {
+  // 自定义渲染：高亮路径
+  const renderCustomSection = ({ annotatedRows, severityCounts }) => {
+    const topRow = annotatedRows[0]
+    if (!topRow) return null
+
+    const endpoints = [endpointFromRow(topRow, 1), endpointFromRow(topRow, 2)]
+    const totalFlaps = Number(topRow.TotalLinkFlaps) || maxLinkFlaps
+
     return (
-      <div className="link-oscillation">
-        <div className="osc-empty">
-          <p>未在 PM_INFO 中检测到 LinkDownedCounter 抖动路径。</p>
-          <p style={{ margin: 0, color: '#6b7280' }}>
-            请确认采集的 ibdiagnet 包中包含 PM_INFO 表，或等待下次运行。
-          </p>
+      <div className="osc-section">
+        <div className="osc-section-header">
+          <div>
+            <h3>最严重链路震荡路径</h3>
+            <p>LinkDownedCounter 累计次数最高的端到端路径</p>
+          </div>
+        </div>
+        <div className="osc-highlight-path">
+          <div className="osc-highlight-endpoint">
+            <div className="osc-highlight-node">{endpoints[0]?.name || 'Node A'}</div>
+            {endpoints[0]?.port != null && <div className="osc-highlight-port">Port {endpoints[0].port}</div>}
+          </div>
+          <div className="osc-highlight-arrow">
+            <ArrowRightLeft size={32} />
+            <div className="osc-highlight-flaps">{formatCount(totalFlaps)} flaps</div>
+          </div>
+          <div className="osc-highlight-endpoint">
+            <div className="osc-highlight-node">{endpoints[1]?.name || 'Node B'}</div>
+            {endpoints[1]?.port != null && <div className="osc-highlight-port">Port {endpoints[1].port}</div>}
+          </div>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="link-oscillation">
-      <div className="osc-metric-grid">
-        {metricCards.map(card => {
-          const Icon = card.icon
-          return (
-            <div key={card.key} className="osc-metric-card">
-              <div className="osc-metric-top">
-                <div className="osc-metric-icon">
-                  <Icon size={18} />
-                </div>
-                <span className="osc-metric-label">{card.label}</span>
-              </div>
-              <div className="osc-metric-value">{formatCount(card.value)}</div>
-              <p className="osc-metric-desc">{card.description}</p>
-            </div>
-          )
-        })}
-      </div>
-
-      <div className="osc-chip-row">
-        {severityChips.map(chip => (
-          <div
-            key={chip.key}
-            className="osc-chip"
-            style={{ background: chip.background, color: chip.color }}
-          >
-            <div className="osc-chip-label">{chip.label}</div>
-            <div className="osc-chip-value">{formatCount(chip.total)}</div>
-            <div className="osc-chip-sub">
-              {chip.key !== 'info' && chip.total !== chip.preview
-                ? `预览 ${formatCount(chip.preview)} / 总计 ${formatCount(chip.total)}`
-                : `预览 ${formatCount(chip.preview)}`}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {highlightedPath && (
-        <div className="osc-top-path">
-          <div className="osc-top-path-header">
-            <div>
-              <h3>抖动最严重的路径</h3>
-              <p>按 TotalLinkFlaps 排序的首条路径，优先排查下列两端节点。</p>
-            </div>
-            <div className="osc-top-path-total">
-              累计 {formatCount(highlightedPath.totalFlaps)} 次 LinkDown
-            </div>
-          </div>
-          <div className="osc-endpoints">
-            {highlightedPath.endpoints?.[0] && (
-              <div className="osc-endpoint">
-                <div className="osc-endpoint-name">{highlightedPath.endpoints[0].name}</div>
-                <div className="osc-endpoint-meta">
-                  端口 {highlightedPath.endpoints[0].port ?? '未知'} · LID{' '}
-                  {highlightedPath.endpoints[0].lid ?? 'N/A'}
-                </div>
-                <div className="osc-endpoint-meta">{highlightedPath.endpoints[0].vendor}</div>
-              </div>
-            )}
-            <ArrowRightLeft className="osc-endpoint-arrow" size={20} />
-            {highlightedPath.endpoints?.[1] && (
-              <div className="osc-endpoint">
-                <div className="osc-endpoint-name">{highlightedPath.endpoints[1].name}</div>
-                <div className="osc-endpoint-meta">
-                  端口 {highlightedPath.endpoints[1].port ?? '未知'} · LID{' '}
-                  {highlightedPath.endpoints[1].lid ?? 'N/A'}
-                </div>
-                <div className="osc-endpoint-meta">{highlightedPath.endpoints[1].vendor}</div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      <div className="osc-section">
-        <div className="osc-section-header">
-          <div>
-            <h3>Top 路径预览</h3>
-            <p>按 TotalLinkFlaps 排序的前 10 条路径，帮助快速定位震荡热点。</p>
-          </div>
-          <span className="osc-section-tag">
-            展示 {previewRows.length} / {rows.length} (总计 {formatCount(stats.totalPaths)})
-          </span>
-        </div>
-        <div className="osc-table-wrapper">
-          <table className="osc-table">
-            <thead>
-              <tr>
-                <th>严重度</th>
-                <th>Path</th>
-                <th>节点 1 LinkDown</th>
-                <th>节点 2 LinkDown</th>
-                <th>Total Link Flaps</th>
-              </tr>
-            </thead>
-            <tbody>
-              {previewRows.map((row, idx) => {
-                const severity = String(row.Severity || 'info').toLowerCase()
-                const node1LinkDown = resolveLinkDownCount(row, 1)
-                const node2LinkDown = resolveLinkDownCount(row, 2)
-                return (
-                  <tr key={`${row.NodeDesc1}-${row.NodeDesc2}-${idx}`}>
-                    <td>
-                      <span className={`osc-severity-dot severity-${severity}`} />
-                      {severity || 'info'}
-                    </td>
-                    <td>{buildPathLabel(row)}</td>
-                    <td>{formatCount(node1LinkDown)}</td>
-                    <td>{formatCount(node2LinkDown)}</td>
-                    <td>{formatCount(row.TotalLinkFlaps)}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div className="osc-section">
-        <div className="osc-section-header">
-          <div>
-            <h3>完整路径表 (可搜索/排序)</h3>
-            <p>需要进一步分析时，可使用下方表格过滤节点、端口或 Vendor。</p>
-          </div>
-        </div>
-        <DataTable
-          rows={tableRows}
-          totalRows={stats.previewRows}
-          preferredColumns={[
-            'Severity',
-            'TotalLinkFlaps',
-            'Path',
-            'Node1LinkDown',
-            'Node2LinkDown',
-            'LinkDownedCounter1',
-            'LinkDownedCounter2',
-            'NodeDesc1',
-            'PortNum1',
-            'NodeDesc2',
-            'PortNum2',
-            'LinkDownedCounterBase1',
-            'LinkDownedCounterBase2',
-            'LinkDownedCounterExt1',
-            'LinkDownedCounterExt2',
-          ]}
-          defaultSortKey="TotalLinkFlaps"
-          searchPlaceholder="搜索节点、端口或 Vendor..."
-        />
-      </div>
-    </div>
+    <UnifiedAnalysisPage
+      title="Link Oscillation"
+      description="链路震荡与抖动分析"
+      emptyMessage="未在 PM_INFO 中检测到 LinkDownedCounter 抖动路径"
+      emptyHint="请确认采集的 ibdiagnet 包中包含 PM_INFO 表，或等待下次运行。"
+      data={enrichedData}
+      summary={summary}
+      totalRows={totalPaths}
+      metricCards={metricCards}
+      getSeverity={getSeverity}
+      getIssueReason={getIssueReason}
+      showInfoLevel={true}
+      topPreviewLimit={10}
+      previewColumns={previewColumns}
+      preferredColumns={preferredColumns}
+      renderCustomSection={renderCustomSection}
+      searchPlaceholder="搜索路径、节点名称..."
+      pageSize={20}
+    />
   )
 }
 

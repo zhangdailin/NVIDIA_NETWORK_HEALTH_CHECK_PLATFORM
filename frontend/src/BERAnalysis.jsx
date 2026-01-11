@@ -1,6 +1,6 @@
 import { AlertTriangle, Activity, Shield, Database } from 'lucide-react'
-import DataTable from './DataTable'
-import { formatCount, toNumber } from './analysisUtils'
+import UnifiedAnalysisPage from './UnifiedAnalysisPage'
+import { formatCount, toNumber, ensureArray } from './analysisUtils'
 
 const normalizeValue = (value, fallback = 'N/A') => {
   if (value === null || value === undefined) {
@@ -52,98 +52,81 @@ const pickFormattedBer = (directCandidates = [], numericCandidates = [], logCand
   return 'N/A'
 }
 
-const extractSymbolBer = (row) => {
-  return pickFormattedBer(
-    [row['Symbol BER'], row.SymbolBER, row.symbolBer],
-    [row.SymbolBERValue],
-    [row.SymbolBERLog10Value, row['Log10 Symbol BER']]
-  )
-}
+function BERAnalysis({ berData = [], showOnlyProblematic = false }) {
+  const rows = ensureArray(berData)
 
-const mergeRows = (berData, berAdvancedData) => {
-  const combined = []
-  if (Array.isArray(berData)) {
-    combined.push(...berData.map(row => ({ ...row })))
-  }
-  if (Array.isArray(berAdvancedData)) {
-    berAdvancedData.forEach(row => {
-      const guid = row.NodeGUID || row['Node GUID']
-      const port = row.PortNumber || row['Port Number']
-      const existingIndex = combined.findIndex(
-        item => (item.NodeGUID || item['Node GUID']) === guid && (item.PortNumber || item['Port Number']) === port
-      )
-      if (existingIndex === -1) {
-        combined.push({ ...row })
-      } else {
-        combined[existingIndex] = { ...combined[existingIndex], ...row }
+  // 定义严重度判断逻辑
+  const getSeverity = (row) => {
+    const severity = String(row.SymbolBERSeverity || row.Severity || '').toLowerCase()
+    if (severity === 'critical' || severity === 'error') {
+      return 'critical'
+    }
+    if (severity === 'warning' || severity === 'warn') {
+      return 'warning'
+    }
+
+    // 检查是否有 Symbol Error
+    const hasSymbolErrors = toNumber(row['Symbol Err'] ?? row.SymbolErr ?? row.symbolErr) > 0
+    if (hasSymbolErrors) {
+      const anomaly = row['IBH Anomaly'] || row.IBHAnomaly
+      if (anomaly) {
+        return 'warning'
       }
-    })
-  }
-  return combined
-}
+    }
 
-const buildDisplayRows = (rows) => rows.map((row, index) => {
-  const severity = String(row.SymbolBERSeverity || row.Severity || '').toLowerCase()
-  const hasSymbolErrors = toNumber(row['Symbol Err'] ?? row.SymbolErr ?? row.symbolErr) > 0
-  const fallbackAnomaly = ['critical', 'warning'].includes(severity) && hasSymbolErrors ? 'High Symbol BER' : ''
-
-  return {
-    id: `${row.NodeGUID || row['Node GUID'] || index}-${row.PortNumber || row['Port Number'] || ''}`,
-    nodeGuid: normalizeValue(row.NodeGUID || row['Node GUID'], 'N/A'),
-    lid: normalizeValue(row.LID || row['LID'], 'N/A'),
-    peerLid: normalizeValue(row['Peer LID'] || row.PeerLID || row.ConnLID || row['Conn LID (#)'], 'N/A'),
-    portNumber: normalizeValue(row.PortNumber || row['Port Number'], 'N/A'),
-    nodeName: normalizeValue(row['Node Name'] || row.NodeName, 'N/A'),
-    attachedTo: normalizeValue(row['Attached To'] || row.AttachedTo, 'N/A'),
-    rawBer: pickFormattedBer(
-      [row['Raw BER'], row.RawBER, row.rawBer],
-      [row.RawBERValue],
-      [row['Log10 Raw BER']]
-    ),
-    effectiveBer: pickFormattedBer(
-      [row['Effective BER'], row.EffectiveBER, row.effectiveBer],
-      [row.EffectiveBERValue],
-      [row['Log10 Effective BER']]
-    ),
-    symbolBer: pickFormattedBer(
-      [row['Symbol BER'], row.SymbolBER, row.symbolBer],
-      [row.SymbolBERValue],
-      [row.SymbolBERLog10Value, row['Log10 Symbol BER']]
-    ),
-    ibhAnomaly: normalizeValue(row['IBH Anomaly'] || row.IBHAnomaly || fallbackAnomaly, ''),
-    symbolErr: formatCount(row['Symbol Err'] ?? row.SymbolErr),
-    effectiveErr: formatCount(row['Effective Err'] ?? row.EffectiveErr),
-    hasSymbolErrors,
-    severity,
-  }
-})
-
-function BERAnalysis({ berData = [], berAdvancedData = [], showOnlyProblematic = false }) {
-  const merged = mergeRows(berData, berAdvancedData)
-  const displayRows = buildDisplayRows(merged)
-  const problemRows = displayRows.filter(row => row.hasSymbolErrors && !!row.ibhAnomaly)
-
-  const criticalPorts = displayRows.filter(row => row.severity === 'critical').length
-  const warningPorts = displayRows.filter(row => row.severity === 'warning').length
-  const totalPorts = displayRows.length
-  const problemCount = problemRows.length
-
-  if (displayRows.length === 0) {
-    return (
-      <div className="osc-empty">
-        <p>未检测到 BER 测试数据。</p>
-        <p style={{ margin: 0, color: '#6b7280' }}>
-          请确认采集的数据包中包含 BER 相关表格。
-        </p>
-      </div>
-    )
+    return 'ok'
   }
 
+  // 定义问题描述逻辑
+  const getIssueReason = (row) => {
+    const severity = String(row.SymbolBERSeverity || row.Severity || '').toLowerCase()
+    const hasSymbolErrors = toNumber(row['Symbol Err'] ?? row.SymbolErr ?? row.symbolErr) > 0
+    const anomaly = row['IBH Anomaly'] || row.IBHAnomaly
+
+    if (severity === 'critical' || severity === 'error') {
+      const symbolBer = pickFormattedBer(
+        [row['Symbol BER'], row.SymbolBER, row.symbolBer],
+        [row.SymbolBERValue],
+        [row.SymbolBERLog10Value, row['Log10 Symbol BER']]
+      )
+      return `严重 BER 问题 (Symbol BER: ${symbolBer})`
+    }
+
+    if (hasSymbolErrors && anomaly) {
+      return anomaly
+    }
+
+    if (severity === 'warning' || severity === 'warn') {
+      const symbolBer = pickFormattedBer(
+        [row['Symbol BER'], row.SymbolBER, row.symbolBer],
+        [row.SymbolBERValue],
+        [row.SymbolBERLog10Value, row['Log10 Symbol BER']]
+      )
+      return `BER 警告 (Symbol BER: ${symbolBer})`
+    }
+
+    if (hasSymbolErrors) {
+      return `Symbol Error: ${formatCount(row['Symbol Err'] ?? row.SymbolErr)}`
+    }
+
+    return '正常'
+  }
+
+  // 计算统计
+  const criticalCount = rows.filter(r => getSeverity(r) === 'critical').length
+  const warningCount = rows.filter(r => getSeverity(r) === 'warning').length
+  const problemCount = rows.filter(r => {
+    const hasSymbolErrors = toNumber(r['Symbol Err'] ?? r.SymbolErr ?? r.symbolErr) > 0
+    const anomaly = r['IBH Anomaly'] || r.IBHAnomaly
+    return hasSymbolErrors && anomaly
+  }).length
+
+  // 指标卡片配置
   const metricCards = [
     {
       key: 'total',
       label: '总端口数',
-      value: totalPorts,
+      value: rows.length,
       description: '全部检测端口',
       icon: Database,
     },
@@ -157,214 +140,109 @@ function BERAnalysis({ berData = [], berAdvancedData = [], showOnlyProblematic =
     {
       key: 'critical',
       label: '严重 BER 问题',
-      value: criticalPorts,
+      value: criticalCount,
       description: 'BER 超过严重阈值',
       icon: Shield,
     },
     {
       key: 'warning',
       label: '警告 BER 问题',
-      value: warningPorts,
+      value: warningCount,
       description: 'BER 超过警告阈值',
       icon: Activity,
     },
   ]
 
-  const severityChips = [
+  // 预览表列配置
+  const previewColumns = [
+    { key: 'IssueSeverity', label: '严重度' },
+    { key: 'IssueReason', label: '问题描述' },
     {
-      key: 'critical',
-      label: '严重',
-      color: '#b91c1c',
-      background: '#fee2e2',
-      count: criticalPorts,
+      key: 'Node Name',
+      label: 'Node Name',
+      render: (row) => normalizeValue(row['Node Name'] || row.NodeName),
     },
     {
-      key: 'warning',
-      label: '警告',
-      color: '#92400e',
-      background: '#fef3c7',
-      count: warningPorts,
+      key: 'Port Number',
+      label: 'Port',
+      render: (row) => normalizeValue(row.PortNumber || row['Port Number']),
     },
     {
-      key: 'info',
-      label: '正常/其他',
-      color: '#0f172a',
-      background: 'var(--bg-tertiary)',
-      count: totalPorts - criticalPorts - warningPorts,
+      key: 'Symbol BER',
+      label: 'Symbol BER',
+      render: (row) => pickFormattedBer(
+        [row['Symbol BER'], row.SymbolBER, row.symbolBer],
+        [row.SymbolBERValue],
+        [row.SymbolBERLog10Value, row['Log10 Symbol BER']]
+      ),
+    },
+    {
+      key: 'Symbol Err',
+      label: 'Symbol Err',
+      render: (row) => formatCount(row['Symbol Err'] ?? row.SymbolErr),
     },
   ]
 
-  const topProblems = problemRows.slice(0, 10)
-  const topCriticalRows = displayRows.filter(row => row.severity === 'critical').slice(0, 10)
-  const topWarningRows = displayRows.filter(row => row.severity === 'warning').slice(0, 10)
+  // 优先显示的列（添加处理逻辑以显示格式化的 BER 值）
+  const preferredColumns = [
+    'Node Name',
+    'Port Number',
+    'Symbol BER',
+    'Symbol Err',
+    'IBH Anomaly',
+    'Raw BER',
+    'Effective BER',
+    'Effective Err',
+    'Node GUID',
+    'LID',
+    'Peer LID',
+  ]
 
-  const tableRows = displayRows.map(row => ({
-    'Node GUID': row.nodeGuid,
-    LID: row.lid,
-    'Peer LID': row.peerLid,
-    'Port Number': row.portNumber,
-    'Node Name': row.nodeName,
-    'Attached To': row.attachedTo,
-    'Raw BER': row.rawBer,
-    'Effective BER': row.effectiveBer,
-    'Symbol BER': row.symbolBer,
-    'IBH Anomaly': row.ibhAnomaly && row.hasSymbolErrors ? row.ibhAnomaly : '—',
-    'Symbol Err': row.symbolErr,
-    'Effective Err': row.effectiveErr,
-    Severity: row.severity || 'info',
+  // 为数据添加格式化的 BER 字段
+  const enrichedData = rows.map(row => ({
+    ...row,
+    'Symbol BER': pickFormattedBer(
+      [row['Symbol BER'], row.SymbolBER, row.symbolBer],
+      [row.SymbolBERValue],
+      [row.SymbolBERLog10Value, row['Log10 Symbol BER']]
+    ),
+    'Raw BER': pickFormattedBer(
+      [row['Raw BER'], row.RawBER, row.rawBer],
+      [row.RawBERValue],
+      [row['Log10 Raw BER']]
+    ),
+    'Effective BER': pickFormattedBer(
+      [row['Effective BER'], row.EffectiveBER, row.effectiveBer],
+      [row.EffectiveBERValue],
+      [row['Log10 Effective BER']]
+    ),
+    'IBH Anomaly': normalizeValue(row['IBH Anomaly'] || row.IBHAnomaly, '—'),
+    'Symbol Err': formatCount(row['Symbol Err'] ?? row.SymbolErr),
+    'Effective Err': formatCount(row['Effective Err'] ?? row.EffectiveErr),
+    'Node Name': normalizeValue(row['Node Name'] || row.NodeName),
+    'Port Number': normalizeValue(row.PortNumber || row['Port Number']),
+    'Node GUID': normalizeValue(row.NodeGUID || row['Node GUID']),
+    'LID': normalizeValue(row.LID || row['LID']),
+    'Peer LID': normalizeValue(row['Peer LID'] || row.PeerLID || row.ConnLID || row['Conn LID (#)']),
   }))
 
   return (
-    <div className="link-oscillation">
-      <div className="osc-metric-grid">
-        {metricCards.map(card => {
-          const Icon = card.icon
-          return (
-            <div key={card.key} className="osc-metric-card">
-              <div className="osc-metric-top">
-                <div className="osc-metric-icon">
-                  <Icon size={18} />
-                </div>
-                <span className="osc-metric-label">{card.label}</span>
-              </div>
-              <div className="osc-metric-value">{formatCount(card.value)}</div>
-              <p className="osc-metric-desc">{card.description}</p>
-            </div>
-          )
-        })}
-      </div>
-
-      <div className="osc-chip-row">
-        {severityChips.map(chip => (
-          <div
-            key={chip.key}
-            className="osc-chip"
-            style={{ background: chip.background, color: chip.color }}
-          >
-            <div className="osc-chip-label">{chip.label}</div>
-            <div className="osc-chip-value">{formatCount(chip.count)}</div>
-            <div className="osc-chip-sub">共 {formatCount(chip.count)} 个端口</div>
-          </div>
-        ))}
-      </div>
-
-      {topCriticalRows.length > 0 && (
-        <div className="osc-section">
-          <div className="osc-section-header">
-            <div>
-              <h3>严重 BER 问题预览 (Top {topCriticalRows.length})</h3>
-              <p>BER 超过严重阈值的端口,按严重程度排序,需立即处理。</p>
-            </div>
-            <span className="osc-section-tag">
-              展示 {topCriticalRows.length} / 总计 {formatCount(criticalPorts)}
-            </span>
-          </div>
-          <div className="osc-table-wrapper">
-            <table className="osc-table">
-              <thead>
-                <tr>
-                  <th>严重度</th>
-                  <th>Node Name</th>
-                  <th>Port</th>
-                  <th>Symbol BER</th>
-                  <th>Symbol Err</th>
-                  <th>IBH Anomaly</th>
-                </tr>
-              </thead>
-              <tbody>
-                {topCriticalRows.map((row, idx) => (
-                  <tr key={`critical-${row.id}-${idx}`}>
-                    <td>
-                      <span className="osc-severity-dot severity-critical" />
-                      严重
-                    </td>
-                    <td>{row.nodeName}</td>
-                    <td>{row.portNumber}</td>
-                    <td style={{ fontFamily: 'monospace', color: '#dc2626', fontWeight: 'bold' }}>{row.symbolBer}</td>
-                    <td style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{row.symbolErr}</td>
-                    <td style={{ color: '#dc2626' }}>{row.ibhAnomaly || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {topWarningRows.length > 0 && (
-        <div className="osc-section">
-          <div className="osc-section-header">
-            <div>
-              <h3>警告 BER 问题预览 (Top {topWarningRows.length})</h3>
-              <p>BER 超过警告阈值的端口,建议持续监控。</p>
-            </div>
-            <span className="osc-section-tag">
-              展示 {topWarningRows.length} / 总计 {formatCount(warningPorts)}
-            </span>
-          </div>
-          <div className="osc-table-wrapper">
-            <table className="osc-table">
-              <thead>
-                <tr>
-                  <th>严重度</th>
-                  <th>Node Name</th>
-                  <th>Port</th>
-                  <th>Symbol BER</th>
-                  <th>Raw BER</th>
-                  <th>Effective BER</th>
-                </tr>
-              </thead>
-              <tbody>
-                {topWarningRows.map((row, idx) => (
-                  <tr key={`warning-${row.id}-${idx}`}>
-                    <td>
-                      <span className="osc-severity-dot severity-warning" />
-                      警告
-                    </td>
-                    <td>{row.nodeName}</td>
-                    <td>{row.portNumber}</td>
-                    <td style={{ fontFamily: 'monospace', color: '#f59e0b' }}>{row.symbolBer}</td>
-                    <td style={{ fontFamily: 'monospace' }}>{row.rawBer}</td>
-                    <td style={{ fontFamily: 'monospace' }}>{row.effectiveBer}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      <div className="osc-section">
-        <div className="osc-section-header">
-          <div>
-            <h3>完整 BER 数据表 (可搜索/排序)</h3>
-            <p>展示格式与原始 CSV 一致,便于核对离线样例。</p>
-          </div>
-          <span className="osc-section-tag">
-            展示 {totalPorts} / 总计 {formatCount(totalPorts)}
-          </span>
-        </div>
-        <DataTable
-          rows={tableRows}
-          totalRows={totalPorts}
-          searchPlaceholder="搜索 NodeGUID、端口、节点或 IBH Anomaly..."
-          pageSize={20}
-          preferredColumns={[
-            'Severity',
-            'Node Name',
-            'Port Number',
-            'Symbol BER',
-            'Symbol Err',
-            'IBH Anomaly',
-            'Raw BER',
-            'Effective BER',
-            'Node GUID',
-            'LID',
-          ]}
-          defaultSortKey="Symbol Err"
-        />
-      </div>
-    </div>
+    <UnifiedAnalysisPage
+      title="BER Analysis"
+      description="误码率 (BER) 分析与诊断"
+      emptyMessage="未检测到 BER 测试数据"
+      emptyHint="请确认采集的数据包中包含 BER 相关表格。"
+      data={enrichedData}
+      totalRows={enrichedData.length}
+      metricCards={metricCards}
+      getSeverity={getSeverity}
+      getIssueReason={getIssueReason}
+      topPreviewLimit={10}
+      previewColumns={previewColumns}
+      preferredColumns={preferredColumns}
+      searchPlaceholder="搜索 NodeGUID、端口、节点或 IBH Anomaly..."
+      pageSize={20}
+    />
   )
 }
 
