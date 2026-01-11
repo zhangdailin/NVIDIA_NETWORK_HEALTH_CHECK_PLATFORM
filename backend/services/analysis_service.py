@@ -25,7 +25,6 @@ from .anomalies import (
     AnomlyType,
 )
 from .ar_info_service import ArInfoService
-from .ber_advanced_service import BerAdvancedService
 from .ber_service import BerService
 from .brief_service import BriefService
 from .buffer_histogram_service import BufferHistogramService
@@ -50,7 +49,6 @@ from .pkey_service import PkeyService
 from .pm_delta_service import PmDeltaService
 from .port_hierarchy_service import PortHierarchyService
 from .power_sensors_service import PowerSensorsService
-from .power_service import PowerService
 from .qos_service import QosService
 from .routing_config_service import RoutingConfigService
 from .routing_service import RoutingService
@@ -59,7 +57,6 @@ from .sm_info_service import SMInfoService
 from .switch_service import SwitchService
 from .system_info_service import SystemInfoService
 from .temp_alerts_service import TempAlertsService
-from .temperature_service import TemperatureService
 from .vports_service import VPortsService
 from .warnings_service import WarningsService
 from .xmit_service import XmitService
@@ -206,8 +203,6 @@ class AnalysisService:
                 ("fan", "Running native fan analysis...", self._run_fan_service),
                 ("histogram", "Running performance histogram analysis...", self._run_histogram_service),
                 ("warnings", "Running ibdiagnet warnings analysis...", self._run_warnings_service),
-                ("temperature", "Running temperature sensor analysis...", self._run_temperature_service),
-                ("power", "Running power supply analysis...", self._run_power_service),
                 ("switch", "Running switch analysis...", self._run_switch_service),
                 ("routing", "Running routing analysis...", self._run_routing_service),
                 ("qos", "Running QoS/VL arbitration analysis...", self._run_qos_service),
@@ -232,7 +227,6 @@ class AnalysisService:
                 ("temp_alerts", "Running Temperature Alerts analysis...", self._run_temp_alerts_service),
                 ("credit_watchdog", "Running Credit Watchdog analysis...", self._run_credit_watchdog_service),
                 ("pci_performance", "Running PCI Performance analysis...", self._run_pci_performance_service),
-                ("ber_advanced", "Running BER Advanced analysis...", self._run_ber_advanced_service),
                 ("per_lane_performance", "Running Per-Lane Performance analysis...", self._run_per_lane_performance_service),
                 ("n2n_security", "Running N2N Security analysis...", self._run_n2n_security_service),
             ]
@@ -258,8 +252,6 @@ class AnalysisService:
             fan_analysis = service_results["fan"]
             histogram_analysis = service_results["histogram"]
             warnings_analysis = service_results["warnings"]
-            temperature_analysis = service_results["temperature"]
-            power_analysis = service_results["power"]
             switch_analysis = service_results["switch"]
             routing_analysis = service_results["routing"]
             qos_analysis = service_results["qos"]
@@ -284,7 +276,6 @@ class AnalysisService:
             temp_alerts_analysis = service_results["temp_alerts"]
             credit_watchdog_analysis = service_results["credit_watchdog"]
             pci_performance_analysis = service_results["pci_performance"]
-            ber_advanced_analysis = service_results["ber_advanced"]
             per_lane_performance_analysis = service_results["per_lane_performance"]
             n2n_security_analysis = service_results["n2n_security"]
         finally:
@@ -298,8 +289,6 @@ class AnalysisService:
         hca_rows = hca_data
         fan_rows = fan_analysis.data
         histogram_rows = histogram_analysis.data
-        temperature_rows = temperature_analysis.data
-        power_rows = power_analysis.data
         switch_rows = switch_analysis.data
         routing_rows = routing_analysis.data
         qos_rows = qos_analysis.data
@@ -324,7 +313,6 @@ class AnalysisService:
         temp_alerts_rows = temp_alerts_analysis.data
         credit_watchdog_rows = credit_watchdog_analysis.data
         pci_performance_rows = pci_performance_analysis.data
-        ber_advanced_rows = ber_advanced_analysis.data
         per_lane_performance_rows = per_lane_performance_analysis.data
         n2n_security_rows = n2n_security_analysis.data
         cable_anomalies = self._flatten_anomaly_records(cable_analysis.anomalies)
@@ -333,8 +321,6 @@ class AnalysisService:
         hca_anomalies = self._flatten_anomaly_records(hca_anomaly_df)
         fan_anomalies = self._flatten_anomaly_records(fan_analysis.anomalies)
         histogram_anomalies = self._flatten_anomaly_records(histogram_analysis.anomalies)
-        temperature_anomalies = self._flatten_anomaly_records(temperature_analysis.anomalies)
-        power_anomalies = self._flatten_anomaly_records(power_analysis.anomalies)
         routing_anomalies = self._flatten_anomaly_records(routing_analysis.anomalies)
         pci_performance_anomalies = self._flatten_anomaly_records(pci_performance_analysis.anomalies)
         qos_anomalies = self._flatten_anomaly_records(qos_analysis.anomalies)
@@ -358,8 +344,6 @@ class AnalysisService:
             ("hca", hca_anomalies),
             ("fan", fan_anomalies),
             ("histogram", histogram_anomalies),
-            ("temperature", temperature_anomalies),
-            ("power", power_anomalies),
             ("routing", routing_anomalies),
             ("qos", qos_anomalies),
             ("mlnx_counters", mlnx_counters_anomalies),
@@ -374,8 +358,6 @@ class AnalysisService:
             "hca": hca_anomalies,
             "fan": fan_anomalies,
             "histogram": histogram_anomalies,
-            "temperature": temperature_anomalies,
-            "power": power_anomalies,
             "routing": routing_anomalies,
             "qos": qos_anomalies,
             "mlnx_counters": mlnx_counters_anomalies,
@@ -402,8 +384,6 @@ class AnalysisService:
             "hca": hca_rows,
             "fan": fan_rows,
             "histogram": histogram_rows,
-            "temperature": temperature_rows,
-            "power": power_rows,
             "switch": switch_rows,
             "routing": routing_rows,
             "qos": qos_rows,
@@ -428,7 +408,6 @@ class AnalysisService:
             "temp_alerts": temp_alerts_rows,
             "credit_watchdog": credit_watchdog_rows,
             "pci_performance": pci_performance_rows,
-            "ber_advanced": ber_advanced_rows,
             "per_lane_performance": per_lane_performance_rows,
             "n2n_security": n2n_security_rows,
         }
@@ -444,8 +423,6 @@ class AnalysisService:
         hca_rows = filtered_datasets["hca"]
         fan_rows = filtered_datasets["fan"]
         histogram_rows = filtered_datasets["histogram"]
-        temperature_rows = filtered_datasets["temperature"]
-        power_rows = filtered_datasets["power"]
         switch_rows = filtered_datasets["switch"]
         routing_rows = filtered_datasets["routing"]
         qos_rows = filtered_datasets["qos"]
@@ -470,7 +447,6 @@ class AnalysisService:
         temp_alerts_rows = filtered_datasets["temp_alerts"]
         credit_watchdog_rows = filtered_datasets["credit_watchdog"]
         pci_performance_rows = filtered_datasets["pci_performance"]
-        ber_advanced_rows = filtered_datasets["ber_advanced"]
         per_lane_performance_rows = filtered_datasets["per_lane_performance"]
         n2n_security_rows = filtered_datasets["n2n_security"]
 
@@ -515,8 +491,6 @@ class AnalysisService:
             "data": self._preview_records(analysis_full_rows),
             "data_issue_rows": self._preview_records(analysis_rows),
             "cable_summary": cable_summary,
-            "temperature_summary": temperature_analysis.summary,
-            "power_summary": power_analysis.summary,
             "switch_summary": switch_analysis.summary,
             "routing_summary": routing_analysis.summary,
             "xmit_summary": getattr(xmit_analysis, "summary", {}),
@@ -544,7 +518,6 @@ class AnalysisService:
             "temp_alerts_summary": temp_alerts_analysis.summary,
             "credit_watchdog_summary": credit_watchdog_analysis.summary,
             "pci_performance_summary": pci_performance_analysis.summary,
-            "ber_advanced_summary": ber_advanced_analysis.summary,
             "per_lane_performance_summary": per_lane_performance_analysis.summary,
             "n2n_security_summary": n2n_security_analysis.summary,
             "warnings_by_category": warnings_by_category,
@@ -563,8 +536,6 @@ class AnalysisService:
             "hca": "hca",
             "fan": "fan",
             "histogram": "histogram",
-            "temperature": "temperature",
-            "power": "power",
             "switch": "switch",
             "routing": "routing",
             "qos": "qos",
@@ -589,7 +560,6 @@ class AnalysisService:
             "temp_alerts": "temp_alerts",
             "credit_watchdog": "credit_watchdog",
             "pci_performance": "pci_performance",
-            "ber_advanced": "ber_advanced",
             "per_lane_performance": "per_lane_performance",
             "n2n_security": "n2n_security",
         }
@@ -646,14 +616,6 @@ class AnalysisService:
             "by_category": service.get_warnings_by_category(),
             "summary": service.get_summary_dict(),
         }
-
-    def _run_temperature_service(self, target_dir: Path):
-        service = TemperatureService(dataset_root=target_dir)
-        return service.run()
-
-    def _run_power_service(self, target_dir: Path):
-        service = PowerService(dataset_root=target_dir)
-        return service.run()
 
     def _run_switch_service(self, target_dir: Path):
         service = SwitchService(dataset_root=target_dir)
@@ -751,9 +713,6 @@ class AnalysisService:
         service = PciPerformanceService(dataset_root=target_dir)
         return service.run()
 
-    def _run_ber_advanced_service(self, target_dir: Path):
-        service = BerAdvancedService(dataset_root=target_dir)
-        return service.run()
 
     def _run_per_lane_performance_service(self, target_dir: Path):
         service = PerLanePerformanceService(dataset_root=target_dir)
@@ -815,7 +774,7 @@ class AnalysisService:
         if not rows:
             return []
         preview = self._preview_records
-        if dataset_name in {"ber", "ber_advanced", "analysis", "link_oscillation"}:
+        if dataset_name in {"ber", "analysis", "link_oscillation"}:
             return preview(rows)
         if anomaly_index:
             matched = [row for row in rows if self._row_matches_anomaly_index(row, anomaly_index)]
