@@ -64,6 +64,8 @@ from .xmit_service import XmitService
 logger = logging.getLogger(__name__)
 
 MAX_PREVIEW_ROWS: Optional[int] = None
+SERVICE_TIMEOUT_SECONDS: int = 60  # Timeout for individual service execution
+RETURN_ONLY_ISSUES: bool = True  # Default to return only fault/issue data
 
 @dataclass
 class IbdiagnetDataset:
@@ -236,7 +238,18 @@ class AnalysisService:
                 logger.info(log_message)
                 service_futures[name] = loop.run_in_executor(executor, runner, target_dir)
 
-            results = await asyncio.gather(*service_futures.values())
+            # Execute all services with individual timeouts
+            results = []
+            for (name, _, _), future in zip(service_specs, service_futures.values()):
+                try:
+                    result = await asyncio.wait_for(future, timeout=SERVICE_TIMEOUT_SECONDS)
+                    results.append(result)
+                except asyncio.TimeoutError:
+                    logger.warning(f"Service {name} timed out after {SERVICE_TIMEOUT_SECONDS}s, using empty result")
+                    results.append(self._get_empty_service_result(name))
+                except Exception as e:
+                    logger.error(f"Service {name} failed: {e}")
+                    results.append(self._get_empty_service_result(name))
 
             service_results = {
                 name: result for (name, _, _), result in zip(service_specs, results)
@@ -315,6 +328,7 @@ class AnalysisService:
         pci_performance_rows = pci_performance_analysis.data
         per_lane_performance_rows = per_lane_performance_analysis.data
         n2n_security_rows = n2n_security_analysis.data
+
         cable_anomalies = self._flatten_anomaly_records(cable_analysis.anomalies)
         xmit_anomalies = self._flatten_anomaly_records(xmit_analysis.anomalies)
         ber_anomalies = self._flatten_anomaly_records(ber_analysis.anomalies)
@@ -337,6 +351,50 @@ class AnalysisService:
             hca_rows,
         )
         analysis_rows = brief_payload["data"]
+
+        # Store original service results (already filtered if RETURN_ONLY_ISSUES=True)
+        original_datasets = {
+            "analysis": analysis_rows,
+            "cable": cable_rows,
+            "xmit": xmit_rows,
+            "link_oscillation": link_oscillation_rows,
+            "ber": ber_rows,
+            "hca": hca_rows,
+            "fan": fan_rows,
+            "histogram": histogram_rows,
+            "switch": switch_rows,
+            "routing": routing_rows,
+            "qos": qos_rows,
+            "sm_info": sm_info_rows,
+            "port_hierarchy": port_hierarchy_rows,
+            "mlnx_counters": mlnx_counters_rows,
+            "pm_delta": pm_delta_rows,
+            "vports": vports_rows,
+            "pkey": pkey_rows,
+            "system_info": system_info_rows,
+            "extended_port_info": extended_port_info_rows,
+            "ar_info": ar_info_rows,
+            "sharp": sharp_rows,
+            "fec_mode": fec_mode_rows,
+            "phy_diagnostics": phy_diagnostics_rows,
+            "neighbors": neighbors_rows,
+            "buffer_histogram": buffer_histogram_rows,
+            "extended_node_info": extended_node_info_rows,
+            "extended_switch_info": extended_switch_info_rows,
+            "power_sensors": power_sensors_rows,
+            "routing_config": routing_config_rows,
+            "temp_alerts": temp_alerts_rows,
+            "credit_watchdog": credit_watchdog_rows,
+            "pci_performance": pci_performance_rows,
+            "per_lane_performance": per_lane_performance_rows,
+            "n2n_security": n2n_security_rows,
+        }
+
+        # Use original datasets for building the final payload
+        datasets = original_datasets
+        dataset_totals = {name: len(rows) for name, rows in datasets.items()}
+
+        # Build anomaly index map first (needed for filtered_datasets)
         extra_sources = [
             ("cable", cable_anomalies),
             ("xmit", xmit_anomalies),
@@ -375,80 +433,11 @@ class AnalysisService:
         if analysis_index:
             anomaly_index_map["analysis"] = analysis_index
 
-        datasets = {
-            "analysis": analysis_rows,
-            "cable": cable_rows,
-            "xmit": xmit_rows,
-            "link_oscillation": link_oscillation_rows,
-            "ber": ber_rows,
-            "hca": hca_rows,
-            "fan": fan_rows,
-            "histogram": histogram_rows,
-            "switch": switch_rows,
-            "routing": routing_rows,
-            "qos": qos_rows,
-            "sm_info": sm_info_rows,
-            "port_hierarchy": port_hierarchy_rows,
-            "mlnx_counters": mlnx_counters_rows,
-            "pm_delta": pm_delta_rows,
-            "vports": vports_rows,
-            "pkey": pkey_rows,
-            "system_info": system_info_rows,
-            "extended_port_info": extended_port_info_rows,
-            "ar_info": ar_info_rows,
-            "sharp": sharp_rows,
-            "fec_mode": fec_mode_rows,
-            "phy_diagnostics": phy_diagnostics_rows,
-            "neighbors": neighbors_rows,
-            "buffer_histogram": buffer_histogram_rows,
-            "extended_node_info": extended_node_info_rows,
-            "extended_switch_info": extended_switch_info_rows,
-            "power_sensors": power_sensors_rows,
-            "routing_config": routing_config_rows,
-            "temp_alerts": temp_alerts_rows,
-            "credit_watchdog": credit_watchdog_rows,
-            "pci_performance": pci_performance_rows,
-            "per_lane_performance": per_lane_performance_rows,
-            "n2n_security": n2n_security_rows,
-        }
-        dataset_totals = {name: len(rows) for name, rows in datasets.items()}
+        # For legacy compatibility, still build filtered_datasets for anomaly index
         filtered_datasets = {
             name: self._filter_anomalies(name, rows, anomaly_index_map.get(name))
             for name, rows in datasets.items()
         }
-        analysis_rows = filtered_datasets["analysis"]
-        cable_rows = filtered_datasets["cable"]
-        xmit_rows = filtered_datasets["xmit"]
-        ber_rows = filtered_datasets["ber"]
-        hca_rows = filtered_datasets["hca"]
-        fan_rows = filtered_datasets["fan"]
-        histogram_rows = filtered_datasets["histogram"]
-        switch_rows = filtered_datasets["switch"]
-        routing_rows = filtered_datasets["routing"]
-        qos_rows = filtered_datasets["qos"]
-        sm_info_rows = filtered_datasets["sm_info"]
-        port_hierarchy_rows = filtered_datasets["port_hierarchy"]
-        mlnx_counters_rows = filtered_datasets["mlnx_counters"]
-        pm_delta_rows = filtered_datasets["pm_delta"]
-        vports_rows = filtered_datasets["vports"]
-        pkey_rows = filtered_datasets["pkey"]
-        system_info_rows = filtered_datasets["system_info"]
-        extended_port_info_rows = filtered_datasets["extended_port_info"]
-        ar_info_rows = filtered_datasets["ar_info"]
-        sharp_rows = filtered_datasets["sharp"]
-        fec_mode_rows = filtered_datasets["fec_mode"]
-        phy_diagnostics_rows = filtered_datasets["phy_diagnostics"]
-        neighbors_rows = filtered_datasets["neighbors"]
-        buffer_histogram_rows = filtered_datasets["buffer_histogram"]
-        extended_node_info_rows = filtered_datasets["extended_node_info"]
-        extended_switch_info_rows = filtered_datasets["extended_switch_info"]
-        power_sensors_rows = filtered_datasets["power_sensors"]
-        routing_config_rows = filtered_datasets["routing_config"]
-        temp_alerts_rows = filtered_datasets["temp_alerts"]
-        credit_watchdog_rows = filtered_datasets["credit_watchdog"]
-        pci_performance_rows = filtered_datasets["pci_performance"]
-        per_lane_performance_rows = filtered_datasets["per_lane_performance"]
-        n2n_security_rows = filtered_datasets["n2n_security"]
 
         logger.info("Calculating health score...")
         health_report = calculate_health_score(
@@ -565,7 +554,12 @@ class AnalysisService:
         }
 
         for dataset_name, alias in dataset_aliases.items():
-            payload[f"{alias}_data"] = preview_full(dataset_name)
+            # Return only issues by default to reduce data transfer
+            if RETURN_ONLY_ISSUES:
+                payload[f"{alias}_data"] = preview_issues(dataset_name)
+            else:
+                payload[f"{alias}_data"] = preview_full(dataset_name)
+
             payload[f"{alias}_issue_rows"] = preview_issues(dataset_name)
             payload[f"{alias}_total_rows"] = dataset_totals.get(
                 dataset_name, len(datasets.get(dataset_name, []))
@@ -573,13 +567,34 @@ class AnalysisService:
         payload["issues"] = issues
         return self._sanitize(payload)
 
+    def _get_empty_service_result(self, service_name: str):
+        """Return empty result for a service that timed out or failed."""
+        from dataclasses import dataclass, field
+
+        # Create a simple empty analysis result
+        @dataclass
+        class EmptyAnalysis:
+            data: List[Dict[str, object]] = field(default_factory=list)
+            anomalies: pd.DataFrame = field(default_factory=lambda: pd.DataFrame())
+            summary: Dict[str, object] = field(default_factory=dict)
+
+        if service_name == "hca":
+            return ([], pd.DataFrame())
+        elif service_name == "warnings":
+            return {
+                "by_category": {},
+                "summary": {},
+            }
+        else:
+            return EmptyAnalysis()
+
     def _run_cable_service(self, target_dir: Path):
         service = CableService(dataset_root=target_dir)
-        return service.run()
+        return service.run(return_only_issues=RETURN_ONLY_ISSUES)
 
     def _run_xmit_service(self, target_dir: Path):
         service = XmitService(dataset_root=target_dir)
-        return service.run()
+        return service.run(return_only_issues=RETURN_ONLY_ISSUES)
 
     def _run_link_oscillation_service(self, target_dir: Path):
         service = LinkOscillationService(dataset_root=target_dir)
@@ -591,7 +606,7 @@ class AnalysisService:
             logger.debug("Reusing cached BER analysis for dataset %s", target_dir)
             return cached
         service = BerService(dataset_root=target_dir)
-        result = service.run()
+        result = service.run(return_only_issues=RETURN_ONLY_ISSUES)
         self._set_cached_service_result("ber", target_dir, result)
         return result
 
@@ -774,15 +789,25 @@ class AnalysisService:
         if not rows:
             return []
         preview = self._preview_records
-        if dataset_name in {"ber", "analysis", "link_oscillation"}:
+
+        # If RETURN_ONLY_ISSUES is enabled, services have already filtered the data
+        # So we just return the rows as-is (with preview limit applied)
+        if RETURN_ONLY_ISSUES:
             return preview(rows)
+
+        # Legacy behavior: apply anomaly filtering
+        # Try anomaly index matching first
         if anomaly_index:
             matched = [row for row in rows if self._row_matches_anomaly_index(row, anomaly_index)]
             if matched:
                 return preview(matched)
+
+        # Apply heuristic detection for all datasets
         heuristic_rows = [row for row in rows if self._row_has_anomaly_markers(row)]
         if heuristic_rows:
             return preview(heuristic_rows)
+
+        # Return all rows if no filtering applied
         return preview(rows)
 
     def _build_anomaly_index(self, anomaly_rows: List[Dict[str, object]]) -> Set[Tuple[str, Optional[int]]]:

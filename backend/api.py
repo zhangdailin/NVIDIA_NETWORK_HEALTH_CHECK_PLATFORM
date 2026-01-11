@@ -34,8 +34,8 @@ ALLOWED_CSV_TYPES = {'.csv'}
 # Initialize analysis service
 analysis_service = AnalysisService()
 
-# Thread pool for parallel execution
-executor = ThreadPoolExecutor(max_workers=4)
+# Thread pool for parallel execution - increased for 33 analysis services
+executor = ThreadPoolExecutor(max_workers=12)
 
 
 def validate_file_size(file: UploadFile) -> None:

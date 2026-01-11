@@ -75,7 +75,7 @@ class BerService:
         self._warnings_df = None
         self._topology = None
 
-    def run(self) -> BerAnalysis:
+    def run(self, return_only_issues: bool = True) -> BerAnalysis:
         df = self._load_dataframe()
         warnings_df = self._load_warnings_dataframe()
         self._annotate_symbol_ber(df)
@@ -92,9 +92,15 @@ class BerService:
             # Filter out empty or all-NA dataframes to avoid FutureWarning
             non_empty_frames = [f for f in frames if not f.empty and not f.isna().all().all()]
             if not non_empty_frames:
-                return []
+                return BerAnalysis(data=[], anomalies=anomalies)
             combined = pd.concat(non_empty_frames, ignore_index=True, sort=False)
             combined = self._topology_lookup().annotate_ports(combined, guid_col="NodeGUID", port_col="PortNumber")
+
+            # Filter to only issues if requested
+            if return_only_issues and "SymbolBERSeverity" in combined.columns:
+                combined_filtered = combined[combined["SymbolBERSeverity"].isin(["critical", "warning"])]
+                logger.info("BER: filtered %d rows to %d issues (critical/warning)", len(combined), len(combined_filtered))
+                combined = combined_filtered
 
             severity_col = combined.get("SymbolBERSeverity")
             if severity_col is not None:
@@ -155,7 +161,8 @@ class BerService:
             self._warnings_df = pd.DataFrame()
             return self._warnings_df
         warnings_df = warnings_df.rename(columns={"PortNum": "PortNumber"})
-        warnings_df["NodeGUID"] = warnings_df.apply(self._remove_redundant_zero, axis=1)
+        # Vectorized GUID normalization instead of apply(axis=1)
+        warnings_df["NodeGUID"] = warnings_df["NodeGUID"].apply(self._normalize_guid_text)
         warnings_df["Summary"] = warnings_df["Summary"].astype(str).str.strip('"')
         self._warnings_df = warnings_df
         return self._warnings_df
@@ -282,39 +289,36 @@ class BerService:
             log_series = pd.to_numeric(df.get("Log10 Symbol BER"), errors="coerce")
             df["SymbolBERLog10Value"] = log_series
 
-        def to_value(log_value):
-            if pd.isna(log_value):
-                return None
-            return math.pow(10, log_value)
-
-        df["SymbolBERValue"] = log_series.apply(to_value)
+        # Vectorized BER value calculation using numpy
+        import numpy as np
+        df["SymbolBERValue"] = np.where(
+            log_series.notna(),
+            np.power(10, log_series.fillna(0)),
+            None
+        )
         df["SymbolBERThreshold"] = SYMBOL_BER_SENTINEL_VALUE
 
-        def requires_warning(row: pd.Series) -> bool:
-            text_value = str(row.get("Symbol BER", "") or "").strip()
-            numeric_value: Optional[float] = None
-            if text_value:
-                try:
-                    numeric_value = float(text_value)
-                except (TypeError, ValueError):
-                    numeric_value = None
-                if numeric_value is None:
-                    return text_value.upper() != SYMBOL_BER_SENTINEL_TEXT
-            if numeric_value is None:
-                numeric_value = row.get("SymbolBERValue")
-            if numeric_value is None or pd.isna(numeric_value):
-                return False
-            return not math.isclose(
-                numeric_value,
-                SYMBOL_BER_SENTINEL_VALUE,
-                rel_tol=0.0,
-                abs_tol=1e-320,
-            )
+        # Vectorized severity calculation
+        text_values = df.get("Symbol BER", pd.Series()).fillna("").astype(str).str.strip()
+        numeric_values = pd.to_numeric(text_values, errors="coerce")
 
-        df["SymbolBERSeverity"] = df.apply(
-            lambda row: "warning" if requires_warning(row) else "normal",
-            axis=1,
+        # Check if text is not sentinel
+        text_not_sentinel = (text_values != "") & (text_values.str.upper() != SYMBOL_BER_SENTINEL_TEXT)
+        # Check if numeric value differs from sentinel
+        has_numeric = numeric_values.notna()
+        numeric_differs = has_numeric & ~np.isclose(numeric_values.fillna(0), SYMBOL_BER_SENTINEL_VALUE, rtol=0.0, atol=1e-320)
+        # Use SymbolBERValue as fallback
+        ber_values = df["SymbolBERValue"]
+        ber_differs = ber_values.notna() & ~np.isclose(
+            pd.to_numeric(ber_values, errors="coerce").fillna(0),
+            SYMBOL_BER_SENTINEL_VALUE,
+            rtol=0.0,
+            atol=1e-320
         )
+
+        # Combine conditions: warning if any condition indicates non-sentinel
+        requires_warning = (text_not_sentinel & ~has_numeric) | numeric_differs | (~has_numeric & ber_differs)
+        df["SymbolBERSeverity"] = np.where(requires_warning, "warning", "normal")
 
         self._annotate_raw_effective_ber(df)
 
@@ -331,16 +335,18 @@ class BerService:
         df["Symbol Err"] = symbol_err
         df["Effective Err"] = effective_err
 
-        def classify_row(row):
-            severity = row.get("SymbolBERSeverity", "normal") or "normal"
-            symbol_count = int(row.get("Symbol Err", 0) or 0)
-            if symbol_count > 0:
-                return self._max_severity(severity, "critical")
-            if row.get("BerWarning"):
-                return self._max_severity(severity, "warning")
-            return severity
+        # Vectorized severity classification
+        import numpy as np
+        current_severity = df.get("SymbolBERSeverity", pd.Series("normal", index=df.index)).fillna("normal")
+        has_symbol_errors = symbol_err > 0
+        has_ber_warning = df.get("BerWarning", pd.Series(False, index=df.index)).fillna(False)
 
-        df["SymbolBERSeverity"] = df.apply(classify_row, axis=1)
+        # Apply severity rules vectorized
+        severity = current_severity.copy()
+        severity = np.where(has_symbol_errors, "critical", severity)
+        severity = np.where(~has_symbol_errors & has_ber_warning & (severity == "normal"), "warning", severity)
+
+        df["SymbolBERSeverity"] = severity
         df.drop(columns=["_TotalSymbolErrors"], inplace=True, errors="ignore")
 
     def _annotate_warning_rows(self, warnings_df: pd.DataFrame | None) -> None:
@@ -453,37 +459,44 @@ class BerService:
             return self._phy_db16_df
 
         phy_df = phy_df.rename(columns={"NodeGuid": "NodeGUID", "PortNum": "PortNumber"})
-        phy_df["NodeGUID"] = phy_df.apply(self._remove_redundant_zero, axis=1)
+        # Vectorized GUID normalization
+        phy_df["NodeGUID"] = phy_df["NodeGUID"].apply(self._normalize_guid_text)
         phy_df["PortNumber"] = pd.to_numeric(phy_df["PortNumber"], errors="coerce")
         phy_df = phy_df.dropna(subset=["NodeGUID", "PortNumber"])
 
-        records: List[Dict[str, object]] = []
+        if phy_df.empty:
+            self._phy_db16_df = pd.DataFrame()
+            return self._phy_db16_df
+
+        # Vectorized BER value calculations instead of iterrows
+        result_df = phy_df[["NodeGUID", "PortNumber"]].copy()
+        result_df["PortNumber"] = result_df["PortNumber"].astype(int)
+
         mappings = [
             ("Raw BER", "RawBERValue", "Log10 Raw BER", "field12", "field13"),
             ("Effective BER", "EffectiveBERValue", "Log10 Effective BER", "field14", "field15"),
             ("Symbol BER", "SymbolBERValue", "Log10 Symbol BER", "field16", "field17"),
         ]
 
-        for _, row in phy_df.iterrows():
-            node_guid = row["NodeGUID"]
-            port_number = int(row["PortNumber"])
-            payload = {"NodeGUID": node_guid, "PortNumber": port_number}
-            for string_col, value_col, log_col, mantissa_col, exponent_col in mappings:
-                mantissa = row.get(mantissa_col)
-                exponent = row.get(exponent_col)
-                value = self._mantissa_exponent_to_value(mantissa, exponent)
-                payload[value_col] = value
-                if value is not None:
-                    payload[string_col] = self._format_ber_value(value)
-                    payload[log_col] = self._safe_log10(value)
-            payload["SymbolBERLog10Value"] = payload.get("Log10 Symbol BER")
-            records.append(payload)
+        for string_col, value_col, log_col, mantissa_col, exponent_col in mappings:
+            if mantissa_col in phy_df.columns and exponent_col in phy_df.columns:
+                # Vectorized mantissa/exponent to value conversion
+                mantissa = pd.to_numeric(phy_df[mantissa_col], errors="coerce")
+                exponent = pd.to_numeric(phy_df[exponent_col], errors="coerce")
 
-        if not records:
-            self._phy_db16_df = pd.DataFrame()
-            return self._phy_db16_df
+                # Calculate values vectorized
+                import numpy as np
+                valid_mask = mantissa.notna() & exponent.notna() & (mantissa != 0)
+                values = pd.Series(index=phy_df.index, dtype=float)
+                values[valid_mask] = mantissa[valid_mask] * np.power(10.0, exponent[valid_mask])
 
-        self._phy_db16_df = pd.DataFrame(records)
+                result_df[value_col] = values
+                result_df[string_col] = values.apply(lambda v: self._format_ber_value(v) if pd.notna(v) else None)
+                result_df[log_col] = np.where(values > 0, np.log10(values), None)
+
+        result_df["SymbolBERLog10Value"] = result_df.get("Log10 Symbol BER")
+
+        self._phy_db16_df = result_df
         return self._phy_db16_df
 
     def _combine_ber_sources(self, net_dump_df: pd.DataFrame, phy_df: pd.DataFrame) -> pd.DataFrame:

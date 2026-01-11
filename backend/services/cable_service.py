@@ -81,6 +81,7 @@ DISPLAY_COLUMNS = [
     "CableComplianceStatus",
     "CableSpeedStatus",
     "LocalActiveLinkSpeed",
+    "Severity",  # Add Severity field for frontend
 ]
 
 MAX_CABLE_ROWS = 2000
@@ -100,13 +101,40 @@ class CableService:
         self._df = None
         self._ports = None
 
-    def run(self) -> CableAnalysis:
+    def run(self, return_only_issues: bool = True) -> CableAnalysis:
         df = self._load_dataframe()
         anomalies = self._build_anomalies(df)
 
-        # Add Severity column based on temperature and alarms
-        df["Severity"] = df.apply(self._calculate_severity, axis=1)
+        # Vectorized Severity calculation instead of apply(axis=1)
+        df["Severity"] = self._vectorized_calculate_severity(df)
         summary = self._build_summary(df)
+
+        # Log severity distribution
+        severity_counts = df["Severity"].value_counts()
+        logger.info(f"Cable severity distribution: {severity_counts.to_dict()}")
+
+        # Filter to only issues (critical/warning) if requested
+        if return_only_issues:
+            df_filtered = df[df["Severity"].isin(["critical", "warning"])]
+            logger.info("Cable: filtered %d rows to %d issues (critical/warning)", len(df), len(df_filtered))
+
+            # Log alarm columns presence
+            alarm_columns = [
+                'TX Bias Alarm and Warning',
+                'TX Power Alarm and Warning',
+                'RX Power Alarm and Warning',
+                'Latched Voltage Alarm and Warning'
+            ]
+            for col in alarm_columns:
+                if col in df_filtered.columns:
+                    non_zero = df_filtered[col].apply(self._alarm_weight).sum()
+                    logger.info(f"Cable: {col} has {non_zero} non-zero alarms in filtered data")
+
+            df = df_filtered
+
+        # NOW filter columns to only display columns (after Severity is calculated)
+        existing_columns = [col for col in DISPLAY_COLUMNS if col in df.columns]
+        df = df[existing_columns].copy()
 
         records = df.to_dict(orient="records")
         total_records = len(records)
@@ -122,6 +150,7 @@ class CableService:
 
         # Read the table efficiently in one go
         df = self._inventory.read_table(CABLE_TABLE)
+        logger.info(f"Cable: loaded {len(df)} rows from {CABLE_TABLE}")
 
         # Batch rename columns to avoid multiple operations
         df.rename(
@@ -140,6 +169,21 @@ class CableService:
         # Process NodeGUIDs efficiently
         df["NodeGUID"] = df["NodeGUID"].apply(self._remove_redundant_zero)
 
+        # Log alarm columns presence before processing
+        alarm_columns = [
+            'TX Bias Alarm and Warning',
+            'TX Power Alarm and Warning',
+            'RX Power Alarm and Warning',
+            'Latched Voltage Alarm and Warning'
+        ]
+        for col in alarm_columns:
+            if col in df.columns:
+                non_null = df[col].notna().sum()
+                non_zero = df[col].apply(self._alarm_weight).sum()
+                logger.info(f"Cable: column '{col}' has {non_null} non-null values, {int(non_zero)} non-zero alarms")
+            else:
+                logger.warning(f"Cable: column '{col}' not found in data")
+
         # Batch annotate with different functions
         df = self._annotate_length_compliance(df)
         df = self._annotate_port_capabilities(df)
@@ -147,9 +191,8 @@ class CableService:
         # Topology lookup
         df = self._topology_lookup().annotate_ports(df, guid_col="NodeGUID", port_col="PortNumber")
 
-        # Select only existing columns
-        existing_columns = [col for col in DISPLAY_COLUMNS if col in df.columns]
-        df = df[existing_columns].copy()
+        # NOTE: Do NOT filter columns here - we need to keep all columns for Severity calculation
+        # The filtering will happen in run() after Severity is calculated
 
         # Keep it cached
         self._df = df
@@ -258,10 +301,18 @@ class CableService:
         token = text.split()[0]
         try:
             if token.lower().startswith("0x"):
-                return 1.0 if int(token, 16) else 0.0
+                alarm_value = int(token, 16)
+                has_alarm = 1.0 if alarm_value else 0.0
+                if has_alarm > 0:
+                    logger.debug(f"Alarm detected: {value} -> weight={has_alarm}")
+                return has_alarm
             parsed = int(token)
-            return 1.0 if parsed else 0.0
+            has_alarm = 1.0 if parsed else 0.0
+            if has_alarm > 0:
+                logger.debug(f"Alarm detected: {value} -> weight={has_alarm}")
+            return has_alarm
         except ValueError:
+            logger.warning(f"Failed to parse alarm value: {value}")
             return 0.0
 
     @staticmethod
@@ -286,20 +337,27 @@ class CableService:
         return df
 
     def _evaluate_cable_limit(self, row) -> str:
+        """Evaluate cable length compliance.
+        Note: Copper length exceeds are now considered informational, not warnings.
+        """
         type_desc = str(row.get("TypeDesc", "")).lower()
         supported_speed = str(row.get("SupportedSpeedDesc", "")).lower()
         length_sm = row.get("LengthSMFiber")
         length_cu = row.get("LengthCopperOrActive")
+
         if "fiber" in type_desc:
             limit_map = {"hdr": 1000, "fdr": 2000}
             for keyword, limit in limit_map.items():
                 if keyword in supported_speed and pd.notna(length_sm) and float(length_sm) > limit:
                     return f"SMF length exceeds {limit}m"
         elif "copper" in type_desc or "passive" in type_desc:
-            limit_map = {"hdr": 5, "fdr": 3}
-            for keyword, limit in limit_map.items():
-                if keyword in supported_speed and pd.notna(length_cu) and float(length_cu) > limit:
-                    return f"Copper length exceeds {limit}m"
+            # Copper length exceeds are now ignored (not treated as warnings)
+            # Uncomment the lines below if you want to re-enable copper length warnings
+            # limit_map = {"hdr": 5, "fdr": 3}
+            # for keyword, limit in limit_map.items():
+            #     if keyword in supported_speed and pd.notna(length_cu) and float(length_cu) > limit:
+            #         return f"Copper length exceeds {limit}m"
+            pass
         return "OK"
 
     def _annotate_port_capabilities(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -407,6 +465,122 @@ class CableService:
             if code & bit:
                 return (priority, label)
         return (0, None)
+
+    def _vectorized_calculate_severity(self, df: pd.DataFrame) -> pd.Series:
+        """Vectorized severity calculation for better performance."""
+        import numpy as np
+
+        TEMP_WARNING_THRESHOLD = 70
+        TEMP_CRITICAL_THRESHOLD = 80
+
+        # Start with all normal
+        severity = pd.Series("normal", index=df.index)
+
+        # Track what caused severity changes for debugging
+        critical_reasons = []
+        warning_reasons = []
+
+        # DEBUG: Log sample data
+        logger.info(f"Cable: Starting severity calculation for {len(df)} rows")
+        if len(df) > 0:
+            sample_row = df.iloc[0]
+            logger.info(f"Cable: Sample row columns: {list(sample_row.index)[:20]}")
+
+        # Check temperature - vectorized
+        if "Temperature (c)" in df.columns:
+            temp = pd.to_numeric(df["Temperature (c)"], errors="coerce")
+            temp_critical_mask = temp >= TEMP_CRITICAL_THRESHOLD
+            temp_warning_mask = (temp >= TEMP_WARNING_THRESHOLD) & (temp < TEMP_CRITICAL_THRESHOLD)
+
+            critical_count = temp_critical_mask.sum()
+            warning_count = temp_warning_mask.sum()
+
+            # DEBUG: Log temperature stats
+            temp_valid = temp.notna().sum()
+            temp_min = temp.min() if temp_valid > 0 else None
+            temp_max = temp.max() if temp_valid > 0 else None
+            logger.info(f"Cable: Temperature - valid: {temp_valid}, min: {temp_min}, max: {temp_max}, critical: {critical_count}, warning: {warning_count}")
+
+            if critical_count > 0:
+                critical_reasons.append(f"Temperature critical: {critical_count} ports")
+            if warning_count > 0:
+                warning_reasons.append(f"Temperature warning: {warning_count} ports")
+
+            severity = np.where(temp_critical_mask, "critical", severity)
+            severity = np.where(
+                temp_warning_mask & (severity != "critical"),
+                "warning",
+                severity
+            )
+
+        # Check alarms - vectorized
+        alarm_columns = [
+            'TX Bias Alarm and Warning',
+            'TX Power Alarm and Warning',
+            'RX Power Alarm and Warning',
+            'Latched Voltage Alarm and Warning'
+        ]
+
+        for col in alarm_columns:
+            if col in df.columns:
+                # DEBUG: Log sample alarm values
+                sample_values = df[col].head(10).tolist()
+                logger.info(f"Cable: {col} sample values: {sample_values}")
+
+                alarm_weights = df[col].apply(self._alarm_weight)
+                alarm_count = (alarm_weights > 0).sum()
+
+                # DEBUG: Log alarm weight stats
+                logger.info(f"Cable: {col} - total weights: {alarm_weights.sum()}, non-zero count: {alarm_count}")
+
+                if alarm_count > 0:
+                    critical_reasons.append(f"{col}: {alarm_count} alarms")
+                    logger.info(f"Cable: {col} triggered {alarm_count} critical alarms")
+                    # DEBUG: Show which rows have alarms
+                    alarm_rows = df[alarm_weights > 0].index.tolist()[:5]
+                    logger.info(f"Cable: {col} alarm row indices (first 5): {alarm_rows}")
+                severity = np.where(alarm_weights > 0, "critical", severity)
+            else:
+                logger.warning(f"Cable: {col} not found in dataframe columns")
+
+        # Check compliance status - vectorized
+        if "CableComplianceStatus" in df.columns:
+            compliance = df["CableComplianceStatus"].fillna("").astype(str).str.upper()
+            compliance_issue = (compliance != "OK") & (compliance != "")
+            compliance_count = compliance_issue.sum()
+
+            # DEBUG: Log compliance stats
+            sample_compliance = df["CableComplianceStatus"].head(10).tolist()
+            logger.info(f"Cable: CableComplianceStatus sample: {sample_compliance}, issues: {compliance_count}")
+
+            if compliance_count > 0:
+                warning_reasons.append(f"Compliance issues: {compliance_count} ports")
+            severity = np.where(compliance_issue & (severity == "normal"), "warning", severity)
+
+        if "CableSpeedStatus" in df.columns:
+            speed = df["CableSpeedStatus"].fillna("").astype(str).str.upper()
+            speed_issue = (speed != "OK") & (speed != "")
+            speed_count = speed_issue.sum()
+
+            # DEBUG: Log speed stats
+            sample_speed = df["CableSpeedStatus"].head(10).tolist()
+            logger.info(f"Cable: CableSpeedStatus sample: {sample_speed}, issues: {speed_count}")
+
+            if speed_count > 0:
+                warning_reasons.append(f"Speed issues: {speed_count} ports")
+            severity = np.where(speed_issue & (severity == "normal"), "warning", severity)
+
+        # Log summary of severity reasons
+        if critical_reasons:
+            logger.info(f"Cable critical reasons: {', '.join(critical_reasons)}")
+        if warning_reasons:
+            logger.info(f"Cable warning reasons: {', '.join(warning_reasons)}")
+
+        # DEBUG: Log final severity distribution
+        final_counts = pd.Series(severity).value_counts()
+        logger.info(f"Cable: Final severity counts before return: {final_counts.to_dict()}")
+
+        return pd.Series(severity, index=df.index)
 
     def _calculate_severity(self, row) -> str:
         """Calculate severity based on temperature and alarms.
@@ -565,16 +739,33 @@ class CableService:
         if "DOMCapable" in df.columns:
             summary["dom_capable_count"] = int(df["DOMCapable"].apply(self._truthy_flag).sum())
 
-        # Efficient length distribution calculation
-        length_buckets: Dict[str, int] = {}
-        for _, row in df.iterrows():
-            bucket = self._categorize_length_bucket(row)
-            length_buckets[bucket] = length_buckets.get(bucket, 0) + 1
-        summary["length_distribution"] = {
-            bucket: length_buckets.get(bucket, 0)
-            for bucket in LENGTH_BUCKETS
-            if length_buckets.get(bucket, 0)
-        }
+        # Vectorized length distribution calculation using pd.cut
+        length_col = None
+        for key in ("LengthCopperOrActive", "LengthSMFiber", "Length"):
+            if key in df.columns:
+                candidate = pd.to_numeric(df[key], errors="coerce")
+                if length_col is None:
+                    length_col = candidate
+                else:
+                    length_col = length_col.fillna(candidate)
+
+        if length_col is not None:
+            length_buckets_series = pd.cut(
+                length_col,
+                bins=[0, 1, 3, 5, 10, 30, 100, float('inf')],
+                labels=["0-1m", "1-3m", "3-5m", "5-10m", "10-30m", "30-100m", ">100m"],
+                right=True
+            )
+            # Convert to string to handle NaN values properly
+            length_buckets_series = length_buckets_series.astype(str).replace('nan', 'Unknown')
+            length_counts = length_buckets_series.value_counts().to_dict()
+            summary["length_distribution"] = {
+                bucket: length_counts.get(bucket, 0)
+                for bucket in LENGTH_BUCKETS
+                if length_counts.get(bucket, 0) > 0
+            }
+        else:
+            summary["length_distribution"] = {}
 
         return summary
 

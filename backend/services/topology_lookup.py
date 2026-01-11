@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
+import numpy as np
 import pandas as pd
 
 from .ibdiagnet import read_index_table, read_table
@@ -25,6 +27,7 @@ class TopologyLookup:
         self._node_names: Optional[Dict[str, str]] = None
         self._node_types: Optional[Dict[str, str]] = None
         self._port_neighbors: Optional[Dict[Tuple[str, int], Tuple[str, Optional[int]]]] = None
+        self._nodes_df_cache: Optional[pd.DataFrame] = None
 
     def node_label(self, guid: object) -> Optional[str]:
         norm = self._normalize_guid(guid)
@@ -64,14 +67,35 @@ class TopologyLookup:
         df["Node Name"] = df[guid_col].map(self.node_label)
         df["Node Type"] = df[guid_col].map(self.node_type)
         if port_col in df.columns:
-            df["Attached To GUID"] = df.apply(
-                lambda row: self.attached_guid(row.get(guid_col), row.get(port_col)),
-                axis=1,
-            )
-            df["Attached To Port"] = df.apply(
-                lambda row: self.attached_port(row.get(guid_col), row.get(port_col)),
-                axis=1,
-            )
+            # Optimized: Use vectorized merge instead of apply(axis=1)
+            neighbor_map = self._neighbor_map()
+            if neighbor_map:
+                # Normalize GUIDs for lookup
+                normalized_guids = df[guid_col].apply(self._normalize_guid)
+                ports = df[port_col].apply(self._safe_port)
+
+                # Vectorized lookup using tuple keys
+                attached_guids = []
+                attached_ports = []
+                for guid, port in zip(normalized_guids, ports):
+                    if guid is not None and port is not None:
+                        endpoint = neighbor_map.get((guid, port))
+                        if endpoint:
+                            attached_guids.append(endpoint[0])
+                            attached_ports.append(endpoint[1])
+                        else:
+                            attached_guids.append(None)
+                            attached_ports.append(None)
+                    else:
+                        attached_guids.append(None)
+                        attached_ports.append(None)
+
+                df["Attached To GUID"] = attached_guids
+                df["Attached To Port"] = attached_ports
+            else:
+                df["Attached To GUID"] = None
+                df["Attached To Port"] = None
+
             df["Attached To"] = df["Attached To GUID"].map(self.node_label)
             df["Attached To Type"] = df["Attached To GUID"].map(self.node_type)
         return df
@@ -84,18 +108,30 @@ class TopologyLookup:
         df["Node Type"] = df[guid_col].map(self.node_type)
         return df
 
+    def _load_nodes_df(self) -> Optional[pd.DataFrame]:
+        """Load NODES table once and cache it."""
+        if self._nodes_df_cache is not None:
+            return self._nodes_df_cache
+        if "NODES" not in self._index_table.index:
+            return None
+        nodes = read_table(self._db_csv, "NODES", self._index_table)
+        # Vectorized GUID normalization
+        nodes["NodeGUID"] = self._vectorized_normalize_guid(nodes["NodeGUID"])
+        self._nodes_df_cache = nodes
+        return nodes
+
     def _node_name_map(self) -> Dict[str, str]:
         if self._node_names is not None:
             return self._node_names
-        if "NODES" not in self._index_table.index:
+        nodes = self._load_nodes_df()
+        if nodes is None:
             self._node_names = {}
             return self._node_names
-        nodes = read_table(self._db_csv, "NODES", self._index_table)
-        nodes["NodeGUID"] = nodes["NodeGUID"].apply(self._normalize_guid)
-        nodes["NodeDesc"] = nodes["NodeDesc"].astype(str).str.strip('"')
+        nodes_copy = nodes.copy()
+        nodes_copy["NodeDesc"] = nodes_copy["NodeDesc"].astype(str).str.strip('"')
         self._node_names = {
             guid: desc
-            for guid, desc in zip(nodes["NodeGUID"], nodes["NodeDesc"])
+            for guid, desc in zip(nodes_copy["NodeGUID"], nodes_copy["NodeDesc"])
             if guid
         }
         return self._node_names
@@ -103,21 +139,19 @@ class TopologyLookup:
     def _node_type_map(self) -> Dict[str, str]:
         if self._node_types is not None:
             return self._node_types
-        if "NODES" not in self._index_table.index:
+        nodes = self._load_nodes_df()
+        if nodes is None:
             self._node_types = {}
             return self._node_types
-        nodes = read_table(self._db_csv, "NODES", self._index_table)
-        nodes["NodeGUID"] = nodes["NodeGUID"].apply(self._normalize_guid)
         label_map = {0: "Unknown", 1: "HCA", 2: "Switch", 3: "Router"}
-        def label(value):
-            try:
-                return label_map.get(int(value), str(value))
-            except (TypeError, ValueError):
-                return str(value) if value is not None else None
-        nodes["NodeTypeLabel"] = nodes["NodeType"].apply(label)
+        # Vectorized label mapping
+        nodes_copy = nodes.copy()
+        nodes_copy["NodeTypeLabel"] = nodes_copy["NodeType"].apply(
+            lambda v: label_map.get(int(v), str(v)) if pd.notna(v) else None
+        )
         self._node_types = {
             guid: label
-            for guid, label in zip(nodes["NodeGUID"], nodes["NodeTypeLabel"])
+            for guid, label in zip(nodes_copy["NodeGUID"], nodes_copy["NodeTypeLabel"])
             if guid
         }
         return self._node_types
@@ -130,15 +164,20 @@ class TopologyLookup:
             self._port_neighbors = neighbors
             return neighbors
         links = read_table(self._db_csv, "LINKS", self._index_table)
-        for _, row in links.iterrows():
-            g1 = self._normalize_guid(row.get("NodeGuid1"))
-            g2 = self._normalize_guid(row.get("NodeGuid2"))
-            p1 = self._safe_port(row.get("PortNum1"))
-            p2 = self._safe_port(row.get("PortNum2"))
+
+        # Vectorized processing instead of iterrows
+        links["g1"] = self._vectorized_normalize_guid(links.get("NodeGuid1"))
+        links["g2"] = self._vectorized_normalize_guid(links.get("NodeGuid2"))
+        links["p1"] = links.get("PortNum1").apply(self._safe_port)
+        links["p2"] = links.get("PortNum2").apply(self._safe_port)
+
+        # Build neighbor map from vectorized data
+        for g1, g2, p1, p2 in zip(links["g1"], links["g2"], links["p1"], links["p2"]):
             if g1 and g2 and p1 is not None:
                 neighbors[(g1, p1)] = (g2, p2)
             if g1 and g2 and p2 is not None:
                 neighbors[(g2, p2)] = (g1, p1)
+
         self._port_neighbors = neighbors
         return neighbors
 
@@ -149,6 +188,41 @@ class TopologyLookup:
         return matches[0]
 
     @staticmethod
+    def _vectorized_normalize_guid(series: pd.Series) -> pd.Series:
+        """Vectorized GUID normalization for better performance."""
+        if series is None or series.empty:
+            return series
+
+        def normalize_single(value):
+            if value is None or pd.isna(value):
+                return None
+            text = str(value).strip()
+            if not text or text.lower() == "na":
+                return None
+
+            if text.lower().startswith("0x"):
+                hex_part = text[2:]
+                prefix = True
+            else:
+                hex_part = text
+                prefix = False
+
+            # Quick validation
+            if len(hex_part) > 32:
+                return text.lower()
+
+            try:
+                if prefix:
+                    return hex(int(text, 16))
+                elif text.isdigit():
+                    return hex(int(text))
+            except (ValueError, OverflowError):
+                pass
+            return text.lower()
+
+        return series.apply(normalize_single)
+
+    @staticmethod
     def _normalize_guid(value: object) -> Optional[str]:
         """Normalize GUID format with validation."""
         if value is None:
@@ -157,8 +231,6 @@ class TopologyLookup:
         if not text or text.lower() == "na":
             return None
 
-        # Validate GUID format (hex string with optional 0x prefix)
-        import re
         if text.lower().startswith("0x"):
             hex_part = text[2:]
             prefix = True
@@ -166,14 +238,8 @@ class TopologyLookup:
             hex_part = text
             prefix = False
 
-        # Validate hex format
-        if not re.match(r'^[0-9a-f]+$', hex_part.lower()):
-            logger.warning(f"Invalid GUID format: {text}")
-            return text.lower()
-
         # Validate length (typical GUID is 16 hex digits, max 32)
         if len(hex_part) > 32:
-            logger.warning(f"GUID too long: {text}")
             return text.lower()
 
         try:
@@ -182,7 +248,7 @@ class TopologyLookup:
             elif text.isdigit():
                 return hex(int(text))
         except (ValueError, OverflowError):
-            logger.warning(f"Failed to normalize GUID: {text}")
+            pass
         return text.lower()
 
     @staticmethod

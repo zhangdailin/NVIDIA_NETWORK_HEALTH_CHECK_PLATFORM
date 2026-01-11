@@ -170,8 +170,8 @@ function CableAnalysis({ cableData, summary }) {
     <UnifiedAnalysisPage
       title="Cable Analysis"
       description="线缆与光模块健康分析"
-      emptyMessage="无线缆数据"
-      emptyHint="请确认采集的数据包中包含线缆信息表格。"
+      emptyMessage="无故障数据"
+      emptyHint="当前网络状态良好，未检测到线缆故障。点击'显示全部'查看所有端口。"
       data={cableData}
       summary={summary}
       totalRows={summary?.cable_info_rows ?? cableData?.length}

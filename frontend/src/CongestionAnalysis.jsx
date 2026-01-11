@@ -161,8 +161,8 @@ function CongestionAnalysis({ xmitData, summary }) {
     <UnifiedAnalysisPage
       title="Congestion Analysis"
       description="网络拥塞与延迟分析"
-      emptyMessage="无拥塞数据"
-      emptyHint="请确认采集的数据包中包含 Xmit 相关表格。"
+      emptyMessage="无拥塞故障数据"
+      emptyHint="当前网络状态良好，未检测到拥塞问题。点击'显示全部'查看所有端口。"
       data={xmitData}
       summary={summary}
       totalRows={summary?.xmit_wait_rows ?? xmitData?.length}

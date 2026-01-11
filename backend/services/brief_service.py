@@ -31,6 +31,11 @@ class BriefService:
         hca_rows: List[Dict[str, object]],
     ) -> BriefResult:
         xmit_df = pd.DataFrame(xmit_rows)
+
+        # If xmit data is empty, return empty result
+        if xmit_df.empty:
+            return BriefResult(data=[])
+
         merged = xmit_df.copy()
 
         # Ensure PortNumber is string type for consistent merging
@@ -41,6 +46,11 @@ class BriefService:
             if not rows:
                 continue
             df = pd.DataFrame(rows)
+
+            # Skip merge if DataFrame doesn't have required columns
+            if "NodeGUID" not in df.columns or "PortNumber" not in df.columns:
+                continue
+
             # Ensure PortNumber is string type before merging
             if "PortNumber" in df.columns:
                 df["PortNumber"] = df["PortNumber"].astype(str)
@@ -48,7 +58,9 @@ class BriefService:
 
         if hca_rows:
             hca_df = pd.DataFrame(hca_rows)
-            merged = pd.merge(merged, hca_df, on="NodeGUID", how="left", suffixes=("", "_hca"))
+            # Skip merge if DataFrame doesn't have NodeGUID column
+            if "NodeGUID" in hca_df.columns:
+                merged = pd.merge(merged, hca_df, on="NodeGUID", how="left", suffixes=("", "_hca"))
 
         merged["Index"] = range(1, len(merged) + 1)
         columns = [

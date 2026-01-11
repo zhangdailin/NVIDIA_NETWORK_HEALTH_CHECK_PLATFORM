@@ -230,8 +230,8 @@ function BERAnalysis({ berData = [], showOnlyProblematic = false }) {
     <UnifiedAnalysisPage
       title="BER Analysis"
       description="误码率 (BER) 分析与诊断"
-      emptyMessage="未检测到 BER 测试数据"
-      emptyHint="请确认采集的数据包中包含 BER 相关表格。"
+      emptyMessage="无 BER 故障数据"
+      emptyHint="当前网络状态良好，未检测到误码率问题。点击'显示全部'查看所有端口。"
       data={enrichedData}
       totalRows={enrichedData.length}
       metricCards={metricCards}

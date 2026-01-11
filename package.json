@@ -2,18 +2,30 @@
   "name": "nvidia-network-health-check-platform",
   "version": "1.0.0",
   "description": "NVIDIA InfiniBand Network Health Check Platform",
+  "private": true,
+  "workspaces": [
+    "frontend"
+  ],
   "scripts": {
     "dev": "concurrently \"npm run backend\" \"npm run frontend\"",
     "server": "concurrently \"npm run backend\" \"npm run frontend\"",
-    "backend": "cd backend && python -m uvicorn main:app --reload --port 8000",
-    "frontend": "cd frontend && npm run dev",
-    "build": "cd frontend && npm run build",
-    "start": "cd backend && python -m uvicorn main:app --host 0.0.0.0 --port 8000",
-    "install:all": "npm install && cd frontend && npm install && cd ../backend && pip install -r requirements.txt",
-    "install:frontend": "cd frontend && npm install",
-    "install:backend": "cd backend && pip install -r requirements.txt"
+    "backend": "cd backend && python -m uvicorn main:app --reload --port 8000 --timeout-keep-alive 300",
+    "frontend": "npm run dev --workspace=frontend",
+    "build": "npm run build --workspace=frontend",
+    "build:prod": "npm run build && echo Frontend built successfully! Run 'npm start' to launch the integrated server.",
+    "start": "cd backend && python -m uvicorn main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 300",
+    "start:prod": "npm run build:prod && npm start",
+    "install:all": "npm install && cd backend && pip install -r requirements.txt",
+    "install:backend": "cd backend && pip install -r requirements.txt",
+    "clean": "rimraf node_modules frontend/node_modules frontend/dist frontend/.vite",
+    "clean:build": "rimraf frontend/dist frontend/.vite"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.2",
+    "rimraf": "^5.0.5"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
   }
 }

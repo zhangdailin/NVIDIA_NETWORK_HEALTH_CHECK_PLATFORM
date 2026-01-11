@@ -54,24 +54,50 @@ function UnifiedAnalysisPage({
   renderBeforeTable = null,
   extraSummary = null, // 额外的摘要信息（JSX）
 }) {
-  const [selectedSeverity, setSelectedSeverity] = useState('all')
+  const [selectedSeverity, setSelectedSeverity] = useState('issues')
 
   const rows = useMemo(() => ensureArray(data), [data])
+
+  // Debug: 检查数据
+  console.log('[UnifiedAnalysisPage] RAW DATA:', title)
+  console.log('  dataLength:', data?.length)
+  console.log('  rowsLength:', rows.length)
+  console.log('  selectedSeverity:', selectedSeverity)
+  console.log('  firstRow:', rows[0])
 
   // 添加严重度标注
   const annotatedRows = useMemo(() => {
     return annotateRows(rows, getSeverity, getIssueReason)
   }, [rows, getSeverity, getIssueReason])
 
+  // Debug: 检查标注后的数据
+  console.log('[UnifiedAnalysisPage] After annotation:')
+  console.log('  annotatedRowsLength:', annotatedRows.length)
+  console.log('  firstAnnotated:', annotatedRows[0])
+  console.log('  firstAnnotated.__severity:', annotatedRows[0]?.__severity)
+
   // 统计各严重度数量
   const severityCounts = useMemo(() => {
     return countBySeverity(annotatedRows, (row) => row.__severity)
   }, [annotatedRows])
 
+  // Debug: 检查严重度统计
+  console.log('[UnifiedAnalysisPage] Severity counts:')
+  console.log('  critical:', severityCounts.critical)
+  console.log('  warning:', severityCounts.warning)
+  console.log('  ok:', severityCounts.ok)
+  console.log('  info:', severityCounts.info)
+
   // 筛选后的行
   const filteredRows = useMemo(() => {
     return filterBySeverity(annotatedRows, selectedSeverity)
   }, [annotatedRows, selectedSeverity])
+
+  // Debug: 检查过滤后的数据
+  console.log('[UnifiedAnalysisPage] After filtering:', {
+    filteredRowsLength: filteredRows.length,
+    selectedSeverity
+  })
 
   // Top N 预览行
   const topCriticalRows = useMemo(() => extractTopRows(annotatedRows, 'critical', topPreviewLimit), [annotatedRows, topPreviewLimit])
@@ -127,6 +153,22 @@ function UnifiedAnalysisPage({
 
   // 构建严重度筛选条
   const severityChips = [
+    {
+      key: 'issues',
+      label: '仅故障',
+      background: '#fef3c7',
+      color: '#92400e',
+      count: severityCounts.critical + severityCounts.warning,
+      previewCount: null,
+    },
+    {
+      key: 'all',
+      label: '显示全部',
+      background: '#e5e7eb',
+      color: '#374151',
+      count: rows.length,
+      previewCount: null,
+    },
     {
       key: 'critical',
       ...SEVERITY_CHIP_STYLES.critical,

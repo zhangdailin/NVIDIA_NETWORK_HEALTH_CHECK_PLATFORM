@@ -190,9 +190,13 @@ class WarningsService:
         self.dataset_root = dataset_root
         self._index_cache: Optional[pd.DataFrame] = None
         self._topology: Optional[TopologyLookup] = None
+        self._analysis_cache: Optional[WarningsAnalysis] = None
 
     def run(self) -> WarningsAnalysis:
-        """Run the warnings analysis."""
+        """Run the warnings analysis (cached)."""
+        if self._analysis_cache is not None:
+            return self._analysis_cache
+
         all_warnings: List[WarningItem] = []
 
         index_table = self._get_index_table()
@@ -217,13 +221,14 @@ class WarningsService:
         pci_summary = self._build_pci_summary()
         counters_summary = self._build_counters_summary()
 
-        return WarningsAnalysis(
+        self._analysis_cache = WarningsAnalysis(
             warnings=all_warnings,
             summary=summary,
             firmware_summary=firmware_summary,
             pci_summary=pci_summary,
             counters_summary=counters_summary,
         )
+        return self._analysis_cache
 
     def _get_index_table(self) -> pd.DataFrame:
         """Get the index table, cached."""

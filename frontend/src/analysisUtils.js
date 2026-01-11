@@ -155,6 +155,12 @@ export const filterBySeverity = (rows, selectedSeverity) => {
   if (!selectedSeverity || selectedSeverity === 'all') {
     return rows
   }
+  // 'issues' 表示只显示 critical 和 warning
+  if (selectedSeverity === 'issues') {
+    return ensureArray(rows).filter(row =>
+      row.__severity === 'critical' || row.__severity === 'warning'
+    )
+  }
   return ensureArray(rows).filter(row => row.__severity === selectedSeverity)
 }
 

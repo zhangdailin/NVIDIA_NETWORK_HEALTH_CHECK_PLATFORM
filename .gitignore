@@ -22,6 +22,8 @@ __pycache__/
 dist/
 build/
 *.egg
+frontend/dist/
+frontend/.vite/
 
 # Logs
 *.log
@@ -32,6 +34,7 @@ yarn-error.log*
 # OS files
 .DS_Store
 Thumbs.db
+nul
 
 # Uploaded files and results (generated at runtime)
 uploads/*
@@ -58,10 +61,7 @@ htmlcov/
 *.tmp
 *.temp
 *.bak
-node_modules
-node_modules
-node_modules
-node_modules
-node_modules
-node_modules
-node_modules
+
+# Lock files (optional - uncomment if you want to ignore them)
+# package-lock.json
+# frontend/package-lock.json

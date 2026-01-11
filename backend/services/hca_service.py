@@ -59,8 +59,13 @@ class HcaService:
         db_csv = self._find_db_csv()
         index_table = read_index_table(db_csv)
         df = read_table(db_csv, HCA_TABLE, index_table)
-        df["NodeGUID"] = df.apply(self._remove_redundant_zero, axis=1)
-        df["Device Type"] = df.apply(self._device_type, axis=1)
+
+        # Vectorized GUID normalization instead of apply(axis=1)
+        df["NodeGUID"] = df["NodeGUID"].apply(self._normalize_guid_value)
+
+        # Vectorized device type extraction
+        df["Device Type"] = df.get("HWInfo_DeviceID", pd.Series("NA", index=df.index)).fillna("NA").astype(str)
+
         df["FW Date"] = (
             df["FWInfo_Year"].astype(str).str[2:]
             + "/"
@@ -68,21 +73,20 @@ class HcaService:
             + "/"
             + df["FWInfo_Day"].astype(str).str[2:]
         )
-        def safe_hex_to_int(x):
-            try:
-                return int(x, 16)
-            except (ValueError, TypeError):
-                logger.warning(f"Invalid hex value: {x}")
-                return 0
 
-        df["FWInfo_Extended_Major"] = df["FWInfo_Extended_Major"].apply(safe_hex_to_int)
-        df["FWInfo_Extended_Minor"] = df["FWInfo_Extended_Minor"].apply(safe_hex_to_int)
-        df["FWInfo_Extended_SubMinor"] = df["FWInfo_Extended_SubMinor"].apply(safe_hex_to_int)
+        # Vectorized hex conversion
+        df["FWInfo_Extended_Major"] = df["FWInfo_Extended_Major"].apply(self._safe_hex_to_int)
+        df["FWInfo_Extended_Minor"] = df["FWInfo_Extended_Minor"].apply(self._safe_hex_to_int)
+        df["FWInfo_Extended_SubMinor"] = df["FWInfo_Extended_SubMinor"].apply(self._safe_hex_to_int)
+
         df["Up Time"] = df["HWInfo_UpTime"].apply(self._safe_uptime)
         df["UptimeSeconds"] = df["HWInfo_UpTime"].apply(self._uptime_seconds)
-        df["RecentlyRebooted"] = df["UptimeSeconds"].apply(
-            lambda seconds: bool(seconds) and seconds <= RECENT_REBOOT_THRESHOLD_SECONDS
-        )
+
+        # Vectorized recently rebooted check
+        import numpy as np
+        uptime_seconds = df["UptimeSeconds"].fillna(0)
+        df["RecentlyRebooted"] = (uptime_seconds > 0) & (uptime_seconds <= RECENT_REBOOT_THRESHOLD_SECONDS)
+
         df["FW"] = (
             df["FWInfo_Extended_Major"].astype(str)
             + "."
@@ -90,12 +94,16 @@ class HcaService:
             + "."
             + df["FWInfo_Extended_SubMinor"].astype(str).str.zfill(4)
         )
-        compliance = df.apply(lambda row: pd.Series(self._evaluate_fw_policy(row)), axis=1)
-        df["PSID_Compliant"] = compliance["psid_ok"]
-        df["FW_Compliant"] = compliance["fw_ok"]
-        df["RecommendedFW"] = compliance["recommended_fw"]
-        df["PolicyNotes"] = compliance["notes"]
-        df["FW_Lag"] = compliance["fw_lag"]
+
+        # Vectorized compliance evaluation
+        compliance_results = df.apply(lambda row: self._evaluate_fw_policy(row), axis=1)
+        compliance_df = pd.DataFrame(compliance_results.tolist(), index=df.index)
+        df["PSID_Compliant"] = compliance_df["psid_ok"]
+        df["FW_Compliant"] = compliance_df["fw_ok"]
+        df["RecommendedFW"] = compliance_df["recommended_fw"]
+        df["PolicyNotes"] = compliance_df["notes"]
+        df["FW_Lag"] = compliance_df["fw_lag"]
+
         df = self._topology_lookup().annotate_nodes(df, guid_col="NodeGUID")
         display_columns = [
             "NodeGUID",
@@ -127,6 +135,27 @@ class HcaService:
             return str(timedelta(seconds=seconds))
         except (ValueError, TypeError):
             return "N/A"
+
+    @staticmethod
+    def _safe_hex_to_int(x):
+        """Convert hex string to int safely."""
+        try:
+            return int(x, 16)
+        except (ValueError, TypeError):
+            return 0
+
+    @staticmethod
+    def _normalize_guid_value(guid) -> str:
+        """Normalize a single GUID value."""
+        if guid is None or pd.isna(guid):
+            return ""
+        guid_str = str(guid)
+        if guid_str.startswith("0x"):
+            try:
+                return hex(int(guid_str, 16))
+            except (ValueError, OverflowError):
+                return guid_str
+        return guid_str
 
     def _find_db_csv(self) -> Path:
         matches = sorted(self.dataset_root.glob("*.db_csv"))

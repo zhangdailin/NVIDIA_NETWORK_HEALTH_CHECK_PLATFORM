@@ -107,17 +107,26 @@ class XmitService:
         self._ports_df = None
         self._credit_df = None
 
-    def run(self) -> XmitAnalysis:
+    def run(self, return_only_issues: bool = True) -> XmitAnalysis:
         df = self._load_dataframe()
         anomalies = self._build_anomalies(df)
         summary = self._build_summary(df)
+
+        # Filter to only issues if requested
+        if return_only_issues:
+            # Keep rows with congestion level warning or severe
+            df_filtered = df[df["CongestionLevel"].isin(["warning", "severe"])]
+            logger.info("Xmit: filtered %d rows to %d issues (warning/severe)", len(df), len(df_filtered))
+            df = df_filtered
+
         return XmitAnalysis(data=df.to_dict(orient="records"), anomalies=anomalies, summary=summary)
 
     def _load_dataframe(self) -> pd.DataFrame:
         if self._df is not None:
             return self._df
         df = self._inventory.read_table(XMIT_TABLE)
-        df["NodeGUID"] = df.apply(self._remove_redundant_zero, axis=1)
+        # Vectorized GUID normalization instead of apply(axis=1)
+        df["NodeGUID"] = df["NodeGUID"].apply(self._normalize_guid_value)
         df["PortXmitWaitTotal"] = pd.to_numeric(df.get("PortXmitWaitExt", 0), errors="coerce").fillna(0)
         df["PortXmitDataTotal"] = pd.to_numeric(df.get("PortXmitDataExtended", 0), errors="coerce").fillna(0)
         tick_to_seconds = 4e-9
@@ -130,7 +139,30 @@ class XmitService:
         except (ValueError, TypeError):
             duration_seconds = 1.0
         df["WaitRatioPct"] = (df["WaitSeconds"] / duration_seconds) * 100
-        df["CongestionLevel"] = df["WaitRatioPct"].apply(self._classify_wait_ratio)
+
+        # Vectorized congestion level classification
+        # Fix: Use proper bins to avoid duplicate labels
+        # 0 <= x <= 1: normal
+        # 1 < x <= 5: warning
+        # x > 5: severe
+        df["CongestionLevel"] = pd.cut(
+            df["WaitRatioPct"],
+            bins=[-float('inf'), 1, 5, float('inf')],
+            labels=["normal", "warning", "severe"],
+            include_lowest=True
+        ).astype(str)
+
+        # Log congestion level distribution
+        congestion_counts = df["CongestionLevel"].value_counts()
+        logger.info(f"Xmit congestion distribution: {congestion_counts.to_dict()}")
+
+        # Count severe and warning
+        severe_count = (df["CongestionLevel"] == "severe").sum()
+        warning_count = (df["CongestionLevel"] == "warning").sum()
+        if severe_count > 0:
+            logger.info(f"Xmit: {severe_count} ports with severe congestion")
+        if warning_count > 0:
+            logger.info(f"Xmit: {warning_count} ports with warning congestion")
 
         fecn = self._extract_counter(df, "PortRcvFECN", "PortRcvFECNExt")
         if fecn is not None:
@@ -150,6 +182,17 @@ class XmitService:
         df = df[existing].copy()
         self._df = df
         return df
+
+    @staticmethod
+    def _normalize_guid_value(guid) -> str:
+        """Normalize a single GUID value."""
+        guid_str = str(guid) if guid is not None else ""
+        if guid_str.startswith("0x"):
+            try:
+                return hex(int(guid_str, 16))
+            except (ValueError, OverflowError):
+                return guid_str
+        return guid_str
 
     @staticmethod
     def _remove_redundant_zero(row) -> str:
@@ -328,9 +371,12 @@ class XmitService:
             & df["SupportedLinkSpeedValue"].gt(0)
             & df["ActiveLinkSpeedValue"].fillna(0).lt(df["SupportedLinkSpeedValue"].fillna(0))
         )
-        df["LinkComplianceStatus"] = df.apply(
-            lambda row: "Downshift" if row["LinkWidthDownshift"] or row["LinkSpeedDownshift"] else "OK",
-            axis=1,
+        # Vectorized using np.where instead of apply(axis=1)
+        import numpy as np
+        df["LinkComplianceStatus"] = np.where(
+            df["LinkWidthDownshift"] | df["LinkSpeedDownshift"],
+            "Downshift",
+            "OK"
         )
         return df
 
