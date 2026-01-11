@@ -33,7 +33,13 @@
       "Bash(git add:*)",
       "Bash(git commit -m \"$\\(cat <<''EOF''\nrefactor: 移除 BER Advanced、Temperature 和 Power 分析模块\n\n- 删除 BER Advanced Analysis 功能\n  - 移除 backend/services/ber_advanced_service.py\n  - 移除 frontend/src/BerAdvancedAnalysis.jsx\n  - 更新 BERAnalysis 组件，移除 BER Advanced 数据合并逻辑\n\n- 删除 Temperature 和 Power 分析标签页\n  - 移除 backend/services/temperature_service.py\n  - 移除 backend/services/power_service.py\n  - 移除 frontend/src/TemperatureAnalysis.jsx\n  - 移除 frontend/src/PowerAnalysis.jsx\n\n- 更新 analysis_service.py\n  - 移除所有 BER Advanced、Temperature 和 Power 相关引用\n  - 清理数据提取、anomalies 处理和 summary 字段\n\n- 更新前端配置\n  - 从 App.jsx 移除相关组件引用和路由\n  - 从 healthCheckDefinitions.js 移除检查定义\n  - 更新\"传感器与电源\"分组，仅保留 Fan、Power Sensors 和 Temp Alerts\n\n- 性能优化\n  - Frontend bundle 大小从 458.26 kB 减少到 445.46 kB \\(减少 12.8 kB\\)\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
       "Bash(git push)",
-      "Bash(npm ls:*)"
+      "Bash(npm ls:*)",
+      "Bash(du:*)",
+      "Bash(git rev-list:*)",
+      "Bash(git cat-file:*)",
+      "Bash(sort:*)",
+      "Bash(git filter-branch:*)",
+      "Bash(git commit:*)"
     ]
   }
 }
