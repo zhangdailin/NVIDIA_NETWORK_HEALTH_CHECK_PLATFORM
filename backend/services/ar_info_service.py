@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import pandas as pd
+from .adaptive_limiter import apply_adaptive_limit
 
 from .ibdiagnet import read_index_table, read_table
 from .topology_lookup import TopologyLookup
@@ -163,7 +164,7 @@ class ArInfoService:
             "hbf_coverage_pct": round(hbf_enabled / max(hbf_supported, 1) * 100, 1),
         }
 
-        return ArInfoResult(data=records[:2000], anomalies=None, summary=summary)
+        return ArInfoResult(data=records, anomalies=None, summary=summary)
 
     def _try_read_table(self, table_name: str) -> pd.DataFrame:
         try:

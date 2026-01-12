@@ -1,13 +1,20 @@
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
-from api import router, executor
-from middleware import RateLimitMiddleware, RequestIDMiddleware
 import os
 from datetime import datetime
 from pathlib import Path
 import atexit
+from dotenv import load_dotenv
+
+# Load environment variables from .env file BEFORE importing other modules
+load_dotenv()
+
+# Import after loading environment variables
+from api import router, executor
+from middleware import RateLimitMiddleware, RequestIDMiddleware
 
 app = FastAPI(
     title="NVIDIA Network Health Check Platform",
@@ -61,6 +68,10 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS"],  # Restrict to needed methods
     allow_headers=["Content-Type", "Authorization"],  # Restrict headers
 )
+
+# Add GZip compression middleware for large JSON responses
+# Compress responses larger than 1KB with gzip
+app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=6)
 
 # Add rate limiting middleware (10 requests per minute per IP)
 app.add_middleware(RateLimitMiddleware, requests_per_minute=10)

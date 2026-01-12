@@ -7,6 +7,7 @@ Uses tables:
 """
 
 from __future__ import annotations
+import os
 
 import logging
 from collections import defaultdict
@@ -15,6 +16,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import pandas as pd
+from .adaptive_limiter import apply_adaptive_limit
 
 from .ibdiagnet import read_index_table, read_table
 from .topology_lookup import TopologyLookup
@@ -87,7 +89,10 @@ class VPortsService:
         # Build summary
         summary = self._build_summary(records, vnodes_df, vports_df, vnode_counts, vport_counts)
 
-        return VPortsResult(data=records[:2000], anomalies=None, summary=summary)
+        # Apply configurable row limit
+        # Using adaptive limiter instead of fixed limit
+        limited_records = apply_adaptive_limit(records)
+        return VPortsResult(data=limited_records, anomalies=None, summary=summary)
 
     def _build_summary(
         self,

@@ -10,6 +10,7 @@ N2N communication is critical for in-band management and SM queries.
 """
 
 from __future__ import annotations
+import os
 
 import logging
 from collections import defaultdict
@@ -18,6 +19,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set
 
 import pandas as pd
+from .adaptive_limiter import apply_adaptive_limit
 
 from .ibdiagnet import read_index_table, read_table
 from .topology_lookup import TopologyLookup
@@ -255,7 +257,10 @@ class N2NSecurityService:
             -r.get("TrapCount", 0)
         ))
 
-        return N2NSecurityResult(data=records[:2000], anomalies=None, summary=summary)
+        # Apply configurable row limit
+        # Using adaptive limiter instead of fixed limit
+        limited_records = apply_adaptive_limit(records)
+        return N2NSecurityResult(data=limited_records, anomalies=None, summary=summary)
 
     def _decode_capabilities(self, cap_mask: int, cap_mask2: int) -> List[str]:
         """Decode capability masks into human-readable list."""

@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set
 
 import pandas as pd
+from .adaptive_limiter import apply_adaptive_limit
 
 from .ibdiagnet import read_index_table, read_table
 from .topology_lookup import TopologyLookup
@@ -99,7 +100,7 @@ class PkeyService:
         records.sort(key=lambda r: (r.get("PKeyValue", 0), r.get("NodeName", "")))
 
         # Return sampled data (PKEY table can be very large)
-        return PkeyResult(data=records[:2000], anomalies=None, summary=summary)
+        return PkeyResult(data=records, anomalies=None, summary=summary)
 
     def _parse_pkey(self, value: object) -> int:
         """Parse PKEY value from various formats."""

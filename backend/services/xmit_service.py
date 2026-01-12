@@ -117,9 +117,20 @@ class XmitService:
             # Keep rows with congestion level warning or severe
             df_filtered = df[df["CongestionLevel"].isin(["warning", "severe"])]
             logger.info("Xmit: filtered %d rows to %d issues (warning/severe)", len(df), len(df_filtered))
+
+            # Log sample data for debugging
+            if len(df_filtered) > 0:
+                logger.info("Xmit: Sample filtered row: %s", df_filtered.iloc[0].to_dict())
+            else:
+                logger.info("Xmit: No warning/severe congestion found. Sample normal row: %s",
+                           df.iloc[0][["NodeGUID", "PortNumber", "WaitRatioPct", "CongestionLevel"]].to_dict() if len(df) > 0 else {})
+
             df = df_filtered
 
-        return XmitAnalysis(data=df.to_dict(orient="records"), anomalies=anomalies, summary=summary)
+        result_data = df.to_dict(orient="records")
+        logger.info("Xmit: Returning %d rows to frontend", len(result_data))
+
+        return XmitAnalysis(data=result_data, anomalies=anomalies, summary=summary)
 
     def _load_dataframe(self) -> pd.DataFrame:
         if self._df is not None:

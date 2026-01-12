@@ -7,6 +7,7 @@ Provides:
 """
 
 from __future__ import annotations
+import os
 
 import logging
 from collections import defaultdict
@@ -15,6 +16,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import pandas as pd
+from .adaptive_limiter import apply_adaptive_limit
 
 from .ibdiagnet import read_index_table, read_table
 from .topology_lookup import TopologyLookup
@@ -88,7 +90,9 @@ class PortHierarchyService:
         summary = self._build_summary(records, plane_nodes, tier_counts, role_counts)
 
         # Sample for display (PORT_HIERARCHY_INFO can be large)
-        display_records = records[:2000] if len(records) > 2000 else records
+        # Apply configurable row limit
+        # Using adaptive limiter instead of fixed limit
+        display_records = apply_adaptive_limit(records)
 
         return PortHierarchyResult(data=display_records, anomalies=None, summary=summary)
 

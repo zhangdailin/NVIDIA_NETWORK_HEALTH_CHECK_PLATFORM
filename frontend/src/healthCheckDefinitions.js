@@ -60,7 +60,7 @@ const HEALTH_CHECK_GROUPS = [
     key: 'ber',
     label: '误码监控',
     description: '原始/PHY 误码率检测',
-    checks: ['ber', 'ber_advanced'],
+    checks: ['ber'],
   },
   {
     key: 'nodes',
@@ -96,7 +96,7 @@ const HEALTH_CHECK_GROUPS = [
     key: 'security_config',
     label: 'Fabric 配置',
     description: 'AR/SHARP/FEC/Watchdog 等配置',
-    checks: ['ar_info', 'sharp', 'fec_mode', 'credit_watchdog'],
+    checks: ['ar_info', 'sharp', 'fec_mode'],
   },
   {
     key: 'diagnostics',
@@ -143,7 +143,7 @@ const HEALTH_CHECK_DEFINITIONS = {
       rowFields: ['CongestionLevel'],
       assumeWarningWhenRowPresent: false,
       summaryCriticalTokens: ['severe_ports'],
-      summaryWarningTokens: ['warning_ports', 'fecn_ports', 'becn_ports', 'link_down_ports', 'credit_watchdog_ports'],
+      summaryWarningTokens: ['warning_ports', 'fecn_ports', 'becn_ports', 'link_down_ports'],
     },
   },
   latency: {
@@ -187,15 +187,6 @@ const HEALTH_CHECK_DEFINITIONS = {
     severity: {
       rowFields: [...DEFAULT_ROW_SEVERITY_FIELDS, 'EffectiveBERSeverity', 'RawBERSeverity', 'SymbolBERSeverity'],
     },
-  },
-  ber_advanced: {
-    key: 'ber_advanced',
-    label: 'BER Advanced',
-    group: 'ber',
-    dataKey: 'ber_advanced_issue_rows',
-    totalKey: 'ber_advanced_total_rows',
-    summaryKey: 'ber_advanced_summary',
-    description: 'PHY DB16/FEC 误码统计',
   },
   hca: {
     key: 'hca',
@@ -376,15 +367,6 @@ const HEALTH_CHECK_DEFINITIONS = {
     totalKey: 'fec_mode_total_rows',
     summaryKey: 'fec_mode_summary',
     description: '链路 FEC 模式与不匹配',
-  },
-  credit_watchdog: {
-    key: 'credit_watchdog',
-    label: 'Credit Watchdog',
-    group: 'security_config',
-    dataKey: 'credit_watchdog_issue_rows',
-    totalKey: 'credit_watchdog_total_rows',
-    summaryKey: 'credit_watchdog_summary',
-    description: 'Credit 超时/告警',
   },
   phy_diagnostics: {
     key: 'phy_diagnostics',

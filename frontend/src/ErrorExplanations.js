@@ -998,59 +998,6 @@ export const ERROR_KNOWLEDGE_BASE = {
     tools_needed: ['Replacement cables', 'Replacement modules']
   },
 
-  XMIT_CREDIT_WATCHDOG: {
-    title: 'Credit Watchdog 超时',
-    titleEn: 'Credit Watchdog Timeout',
-    category: 'xmit',
-    severity: 'critical',
-    threshold: 'Timeout > 0',
-    thresholdValue: 1,
-    why_it_matters: 'Credit watchdog超时表明流控机制异常，可能存在死锁或严重的协议问题，会导致链路挂起。',
-    why_it_matters_en: 'Credit watchdog timeout indicates flow control mechanism failure, possible deadlock or serious protocol issues, causing link hang.',
-    likely_causes: [
-      '存在credit loop（信用环路）',
-      '对端设备响应异常',
-      '交换机固件bug',
-      '链路不稳定导致credit丢失',
-      '配置错误',
-      '硬件故障'
-    ],
-    likely_causes_en: [
-      'Credit loop exists',
-      'Remote device response abnormal',
-      'Switch firmware bug',
-      'Link instability causing credit loss',
-      'Configuration error',
-      'Hardware failure'
-    ],
-    recommended_actions: [
-      '【紧急】检查是否存在credit loop',
-      '【紧急】检查对端设备状态',
-      '重启受影响的端口或设备',
-      '升级交换机固件到最新版本',
-      '检查网络拓扑是否合理',
-      '联系NVIDIA技术支持'
-    ],
-    recommended_actions_en: [
-      '[Urgent] Check for credit loop',
-      '[Urgent] Check remote device status',
-      'Restart affected port or device',
-      'Upgrade switch firmware to latest version',
-      'Check if network topology is reasonable',
-      'Contact NVIDIA technical support'
-    ],
-    reference: 'Credit Loop Detection and Resolution',
-    reference_url: 'https://docs.nvidia.com/networking/display/IBDiagnetUserManualv2130/Credit+Loop+Detection',
-    urgency: 'critical',
-    impact: {
-      performance: 'critical',
-      reliability: 'critical',
-      dataIntegrity: 'medium'
-    },
-    mttr_estimate: '30-180 minutes',
-    tools_needed: ['ibdiagnet', 'UFM', 'Console access']
-  },
-
   XMIT_HIGH_DISCARD: {
     title: '端口丢包严重',
     titleEn: 'High Port Discard Rate',
@@ -2270,15 +2217,11 @@ export function identifyIssueType(row, dataType) {
 
     case 'xmit': {
       const waitRatio = Number(row.WaitRatioPct) || 0
-      const creditWatchdog = Number(row.CreditWatchdogTimeout) || 0
       const linkCompliance = String(row.LinkComplianceStatus || '').toLowerCase()
       const portRcvErrors = Number(row.PortRcvErrors) || 0
       const portXmitDiscards = Number(row.PortXmitDiscards) || 0
       const linkDowned = Number(row.LinkDownedCounter) || 0
 
-      if (creditWatchdog > 0) {
-        return 'XMIT_CREDIT_WATCHDOG'
-      }
       if (portXmitDiscards > 0) {
         return 'XMIT_HIGH_DISCARD'
       }
@@ -2412,13 +2355,11 @@ export function identifyAllIssues(row, dataType) {
 
     case 'xmit': {
       const waitRatio = Number(row.WaitRatioPct) || 0
-      const creditWatchdog = Number(row.CreditWatchdogTimeout) || 0
       const portRcvErrors = Number(row.PortRcvErrors) || 0
       const portXmitDiscards = Number(row.PortXmitDiscards) || 0
       const linkDowned = Number(row.LinkDownedCounter) || 0
       const linkCompliance = String(row.LinkComplianceStatus || '').toLowerCase()
 
-      if (creditWatchdog > 0) issues.push('XMIT_CREDIT_WATCHDOG')
       if (portXmitDiscards > 0) issues.push('XMIT_HIGH_DISCARD')
       if (portRcvErrors > 0) issues.push('XMIT_HIGH_RCV_ERRORS')
       if (waitRatio >= 5) issues.push('XMIT_SEVERE_CONGESTION')

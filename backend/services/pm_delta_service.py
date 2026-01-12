@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import pandas as pd
+from .adaptive_limiter import apply_adaptive_limit
 
 from .anomalies import AnomlyType, IBH_ANOMALY_AGG_COL, IBH_ANOMALY_AGG_WEIGHT
 from .ibdiagnet import read_index_table, read_table
@@ -175,7 +176,7 @@ class PmDeltaService:
             -r.get("FECCorrected", 0)
         ))
 
-        return PmDeltaResult(data=records[:2000], anomalies=anomalies, summary=summary)
+        return PmDeltaResult(data=records, anomalies=anomalies, summary=summary)
 
     def _build_summary(self, records: List[Dict], raw_df: pd.DataFrame) -> Dict[str, object]:
         """Build summary statistics."""

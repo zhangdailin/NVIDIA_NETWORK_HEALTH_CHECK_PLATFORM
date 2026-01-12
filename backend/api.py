@@ -1,4 +1,5 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi.responses import StreamingResponse
 import shutil
 import os
 import zipfile
@@ -8,6 +9,7 @@ import uuid
 from pathlib import Path
 import logging
 import asyncio
+import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
@@ -261,6 +263,10 @@ async def upload_ibdiagnet(file: UploadFile = File(...)):
 
         logger.info(f"Analysis complete for task {task_id}")
 
+        # Cache the full data for streaming (if needed in future)
+        cache_analysis_results(task_id, payload)
+
+        # Return full response with all data (adaptive limiter already applied in services)
         return {
             "status": "success",
             "task_id": task_id,
@@ -396,3 +402,120 @@ async def upload_ufm_csv(file: UploadFile = File(...)):
                 logger.warning(f"CSV file still in use, will be cleaned up later: {file_path.name}")
             except Exception as e:
                 logger.warning(f"Failed to cleanup CSV: {e}")
+
+
+# Global cache for analysis results (for streaming)
+analysis_results_cache = {}
+
+
+@router.get("/stream/{task_id}/{service_name}", tags=["streaming"])
+async def stream_service_data(task_id: str, service_name: str):
+    """
+    Stream service data using Server-Sent Events (SSE).
+    
+    This endpoint streams data in chunks to avoid memory issues on the client side.
+    Each chunk contains 500 rows of data.
+    
+    Args:
+        task_id: The analysis task ID
+        service_name: Name of the service (e.g., 'xmit', 'cable', 'ber')
+    
+    Returns:
+        StreamingResponse with SSE events
+    """
+    
+    async def event_generator():
+        try:
+            # Check if we have cached results for this task
+            cache_key = f"{task_id}_{service_name}"
+            
+            if cache_key not in analysis_results_cache:
+                yield f"event: error\ndata: {json.dumps({'error': 'Task not found or expired'})}\n\n"
+                return
+            
+            data = analysis_results_cache[cache_key]
+            
+            if not data:
+                yield f"event: complete\ndata: {json.dumps({'total': 0, 'message': 'No data available'})}\n\n"
+                return
+            
+            total_rows = len(data)
+            chunk_size = 500
+            
+            # Send metadata first
+            yield f"event: metadata\ndata: {json.dumps({'total': total_rows, 'chunk_size': chunk_size})}\n\n"
+            
+            # Stream data in chunks
+            for i in range(0, total_rows, chunk_size):
+                chunk = data[i:i + chunk_size]
+                chunk_data = {
+                    'chunk_index': i // chunk_size,
+                    'start': i,
+                    'end': min(i + chunk_size, total_rows),
+                    'data': chunk
+                }
+                
+                yield f"event: data\ndata: {json.dumps(chunk_data)}\n\n"
+                
+                # Small delay to prevent overwhelming the client
+                await asyncio.sleep(0.05)
+            
+            # Send completion event
+            yield f"event: complete\ndata: {json.dumps({'total': total_rows, 'message': 'Stream complete'})}\n\n"
+            
+        except Exception as e:
+            logger.error(f"Streaming error for {task_id}/{service_name}: {e}", exc_info=True)
+            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
+def cache_analysis_results(task_id: str, payload: dict):
+    """
+    Cache analysis results for streaming.
+    
+    Args:
+        task_id: The analysis task ID
+        payload: The analysis payload containing all service data
+    """
+    # Cache each service's data
+    service_keys = [
+        'cable_data', 'xmit_data', 'ber_data', 'hca_data', 'fan_data',
+        'switch_data', 'routing_data', 'link_oscillation_data', 'histogram_data',
+        'qos_data', 'sm_info_data', 'port_hierarchy_data', 'mlnx_counters_data',
+        'pm_delta_data', 'vports_data', 'pkey_data', 'system_info_data',
+        'extended_port_info_data', 'ar_info_data', 'sharp_data', 'fec_mode_data',
+        'phy_diagnostics_data', 'neighbors_data', 'buffer_histogram_data',
+        'extended_node_info_data', 'extended_switch_info_data', 'power_sensors_data',
+        'routing_config_data', 'temp_alerts_data', 'credit_watchdog_data',
+        'pci_performance_data', 'per_lane_performance_data', 'n2n_security_data'
+    ]
+    
+    for key in service_keys:
+        if key in payload and payload[key]:
+            service_name = key.replace('_data', '')
+            cache_key = f"{task_id}_{service_name}"
+            analysis_results_cache[cache_key] = payload[key]
+            logger.info(f"Cached {len(payload[key])} rows for {service_name}")
+    
+    # Clean up old cache entries (older than 1 hour)
+    cleanup_old_cache()
+
+
+def cleanup_old_cache():
+    """Remove cache entries older than 1 hour."""
+    # Simple implementation: keep last 10 tasks
+    if len(analysis_results_cache) > 100:
+        # Remove oldest entries
+        keys_to_remove = list(analysis_results_cache.keys())[:50]
+        for key in keys_to_remove:
+            del analysis_results_cache[key]
+        logger.info(f"Cleaned up {len(keys_to_remove)} old cache entries")

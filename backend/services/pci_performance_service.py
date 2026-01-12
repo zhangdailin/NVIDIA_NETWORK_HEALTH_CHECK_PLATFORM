@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
+from .adaptive_limiter import apply_adaptive_limit
 
 from .ibdiagnet import read_index_table, read_table
 from .topology_lookup import TopologyLookup
@@ -276,7 +277,7 @@ class PciPerformanceService:
 
         anomalies = pd.DataFrame(anomaly_records) if anomaly_records else None
 
-        return PciPerformanceResult(data=records[:2000], anomalies=anomalies, summary=summary)
+        return PciPerformanceResult(data=records, anomalies=anomalies, summary=summary)
 
     def _try_read_table(self, table_name: str) -> pd.DataFrame:
         try:

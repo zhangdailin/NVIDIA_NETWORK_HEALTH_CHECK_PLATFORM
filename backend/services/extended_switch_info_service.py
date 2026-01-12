@@ -5,6 +5,7 @@ Uses tables:
 """
 
 from __future__ import annotations
+import os
 
 import logging
 from collections import defaultdict
@@ -13,6 +14,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import pandas as pd
+from .adaptive_limiter import apply_adaptive_limit
 
 from .ibdiagnet import read_index_table, read_table
 from .topology_lookup import TopologyLookup
@@ -157,7 +159,10 @@ class ExtendedSwitchInfoService:
             r.get("NodeName", "")
         ))
 
-        return ExtendedSwitchInfoResult(data=records[:2000], anomalies=None, summary=summary)
+        # Apply configurable row limit
+        # Using adaptive limiter instead of fixed limit
+        limited_records = apply_adaptive_limit(records)
+        return ExtendedSwitchInfoResult(data=limited_records, anomalies=None, summary=summary)
 
     def _try_read_table(self, table_name: str) -> pd.DataFrame:
         try:

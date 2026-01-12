@@ -6,6 +6,7 @@ Uses tables:
 """
 
 from __future__ import annotations
+import os
 
 import logging
 from collections import defaultdict
@@ -14,6 +15,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import pandas as pd
+from .adaptive_limiter import apply_adaptive_limit
 
 from .anomalies import AnomlyType, IBH_ANOMALY_AGG_COL, IBH_ANOMALY_AGG_WEIGHT
 from .ibdiagnet import read_index_table, read_table
@@ -129,7 +131,9 @@ class QosService:
         summary = self._build_summary(records)
 
         # Sample down for display (VL table is very large)
-        display_records = records[:2000] if len(records) > 2000 else records
+        # Apply configurable row limit
+        # Using adaptive limiter instead of fixed limit
+        display_records = apply_adaptive_limit(records)
 
         return QosResult(data=display_records, anomalies=None, summary=summary)
 

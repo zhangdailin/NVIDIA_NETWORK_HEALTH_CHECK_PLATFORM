@@ -5,6 +5,7 @@ Uses tables:
 """
 
 from __future__ import annotations
+import os
 
 import logging
 from dataclasses import dataclass, field
@@ -12,6 +13,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import pandas as pd
+from .adaptive_limiter import apply_adaptive_limit
 
 from .ibdiagnet import read_index_table, read_table
 from .topology_lookup import TopologyLookup
@@ -126,7 +128,10 @@ class SharpService:
             "data_types_supported": data_type_names,
         }
 
-        return SharpResult(data=records[:2000], anomalies=None, summary=summary)
+        # Apply configurable row limit
+        # Using adaptive limiter instead of fixed limit
+        limited_records = apply_adaptive_limit(records)
+        return SharpResult(data=limited_records, anomalies=None, summary=summary)
 
     def _decode_data_types(self, bitmask: int) -> List[str]:
         """Decode SHARP data types bitmask."""

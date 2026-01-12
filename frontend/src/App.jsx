@@ -32,7 +32,6 @@ import ExtendedSwitchInfoAnalysis from './ExtendedSwitchInfoAnalysis'
 import PowerSensorsAnalysis from './PowerSensorsAnalysis'
 import RoutingConfigAnalysis from './RoutingConfigAnalysis'
 import TempAlertsAnalysis from './TempAlertsAnalysis'
-import CreditWatchdogAnalysis from './CreditWatchdogAnalysis'
 import PciPerformanceAnalysis from './PciPerformanceAnalysis'
 import PerLanePerformanceAnalysis from './PerLanePerformanceAnalysis'
 import N2nSecurityAnalysis from './N2nSecurityAnalysis'
@@ -126,7 +125,6 @@ const TAB_ICON_MAP = {
   ar_info: Shuffle,
   sharp: BrainCircuit,
   fec_mode: Shield,
-  credit_watchdog: Timer,
   phy_diagnostics: Radio,
   extended_port_info: PlugZap,
   extended_node_info: HardDrive,
@@ -586,6 +584,8 @@ function App() {
 
   const renderIbdiagnetContent = () => {
     const {
+      task_id,
+      streaming_enabled,
       data,
       cable_data,
       xmit_data,
@@ -616,7 +616,6 @@ function App() {
       power_sensors_data,
       routing_config_data,
       temp_alerts_data,
-      credit_watchdog_data,
       pci_performance_data,
       per_lane_performance_data,
       n2n_security_data,
@@ -647,7 +646,6 @@ function App() {
       power_sensors_summary,
       routing_config_summary,
       temp_alerts_summary,
-      credit_watchdog_summary,
       pci_performance_summary,
       per_lane_performance_summary,
       n2n_security_summary,
@@ -684,7 +682,6 @@ function App() {
       power_sensors_total_rows,
       routing_config_total_rows,
       temp_alerts_total_rows,
-      credit_watchdog_total_rows,
       pci_performance_total_rows,
       per_lane_performance_total_rows,
       n2n_security_total_rows,
@@ -935,7 +932,13 @@ function App() {
       case 'xmit': {
         return (
           <div className="scroll-area">
-            <CongestionAnalysis xmitData={xmit_data} summary={xmit_summary} />
+            <CongestionAnalysis
+              xmitData={xmit_data}
+              summary={xmit_summary}
+              taskId={task_id}
+              serviceName="xmit"
+              enableStreaming={streaming_enabled}
+            />
           </div>
         )
       }
@@ -1128,13 +1131,6 @@ function App() {
         return (
           <div className="scroll-area">
               <TempAlertsAnalysis tempAlertsData={temp_alerts_data} summary={temp_alerts_summary} />
-          </div>
-        )
-      }
-      case 'credit_watchdog': {
-        return (
-          <div className="scroll-area">
-              <CreditWatchdogAnalysis creditWatchdogData={credit_watchdog_data} summary={credit_watchdog_summary} />
           </div>
         )
       }

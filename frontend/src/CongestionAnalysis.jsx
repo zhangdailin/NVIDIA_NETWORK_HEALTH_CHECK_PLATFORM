@@ -2,9 +2,18 @@ import { AlertTriangle, XCircle, Clock, Activity, Database } from 'lucide-react'
 import UnifiedAnalysisPage from './UnifiedAnalysisPage'
 import { toNumber, formatCount } from './analysisUtils'
 
-function CongestionAnalysis({ xmitData, summary }) {
-  // 定义严重度判断逻辑
+function CongestionAnalysis({ xmitData, summary, taskId, serviceName, enableStreaming }) {
+  // 定义严重度判断逻辑 - 优先使用后端返回的 CongestionLevel
   const getSeverity = (row) => {
+    // 如果后端已经计算了 CongestionLevel，直接使用
+    if (row.CongestionLevel) {
+      const level = String(row.CongestionLevel).toLowerCase()
+      if (level === 'severe') return 'critical'
+      if (level === 'warning') return 'warning'
+      if (level === 'normal') return 'ok'
+    }
+
+    // 否则使用前端逻辑计算
     const waitRatio = toNumber(row.WaitRatioPct)
     const congestionPct = toNumber(row.XmitCongestionPct)
     const linkDowned = toNumber(row.LinkDownedCounter || row.LinkDownedCounterExt)
@@ -166,6 +175,9 @@ function CongestionAnalysis({ xmitData, summary }) {
       data={xmitData}
       summary={summary}
       totalRows={summary?.xmit_wait_rows ?? xmitData?.length}
+      taskId={taskId}
+      serviceName={serviceName}
+      enableStreaming={enableStreaming}
       metricCards={metricCards}
       getSeverity={getSeverity}
       getIssueReason={getIssueReason}

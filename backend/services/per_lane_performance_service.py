@@ -10,12 +10,15 @@ Lane-level analysis can identify specific lanes with issues (e.g., one bad lane 
 """
 
 from __future__ import annotations
+import os
 
 import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+
+from .adaptive_limiter import apply_adaptive_limit
 
 import pandas as pd
 
@@ -312,7 +315,9 @@ class PerLanePerformanceService:
             -r.get("LanesWithIssues", 0)
         ))
 
-        return PerLanePerformanceResult(data=records[:2000], anomalies=None, summary=summary)
+        # Apply adaptive row limit based on data size
+        limited_records = apply_adaptive_limit(records)
+        return PerLanePerformanceResult(data=limited_records, anomalies=None, summary=summary)
 
     def _try_read_table(self, table_name: str) -> pd.DataFrame:
         try:

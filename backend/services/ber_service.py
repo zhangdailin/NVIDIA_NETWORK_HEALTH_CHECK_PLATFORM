@@ -304,20 +304,17 @@ class BerService:
 
         # Check if text is not sentinel
         text_not_sentinel = (text_values != "") & (text_values.str.upper() != SYMBOL_BER_SENTINEL_TEXT)
-        # Check if numeric value differs from sentinel
+        # Check if numeric value is greater than sentinel (indicates actual error rate)
         has_numeric = numeric_values.notna()
-        numeric_differs = has_numeric & ~np.isclose(numeric_values.fillna(0), SYMBOL_BER_SENTINEL_VALUE, rtol=0.0, atol=1e-320)
+        numeric_exceeds_sentinel = has_numeric & (numeric_values > SYMBOL_BER_SENTINEL_VALUE)
         # Use SymbolBERValue as fallback
         ber_values = df["SymbolBERValue"]
-        ber_differs = ber_values.notna() & ~np.isclose(
-            pd.to_numeric(ber_values, errors="coerce").fillna(0),
-            SYMBOL_BER_SENTINEL_VALUE,
-            rtol=0.0,
-            atol=1e-320
+        ber_exceeds_sentinel = ber_values.notna() & (
+            pd.to_numeric(ber_values, errors="coerce").fillna(0) > SYMBOL_BER_SENTINEL_VALUE
         )
 
-        # Combine conditions: warning if any condition indicates non-sentinel
-        requires_warning = (text_not_sentinel & ~has_numeric) | numeric_differs | (~has_numeric & ber_differs)
+        # Combine conditions: warning if BER value exceeds sentinel (indicates actual errors)
+        requires_warning = (text_not_sentinel & ~has_numeric) | numeric_exceeds_sentinel | (~has_numeric & ber_exceeds_sentinel)
         df["SymbolBERSeverity"] = np.where(requires_warning, "warning", "normal")
 
         self._annotate_raw_effective_ber(df)

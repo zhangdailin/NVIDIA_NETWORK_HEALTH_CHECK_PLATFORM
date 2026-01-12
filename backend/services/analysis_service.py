@@ -29,7 +29,6 @@ from .ber_service import BerService
 from .brief_service import BriefService
 from .buffer_histogram_service import BufferHistogramService
 from .cable_service import CableService
-from .credit_watchdog_service import CreditWatchdogService
 from .extended_node_info_service import ExtendedNodeInfoService
 from .extended_port_info_service import ExtendedPortInfoService
 from .extended_switch_info_service import ExtendedSwitchInfoService
@@ -64,8 +63,8 @@ from .xmit_service import XmitService
 logger = logging.getLogger(__name__)
 
 MAX_PREVIEW_ROWS: Optional[int] = None
-SERVICE_TIMEOUT_SECONDS: int = 60  # Timeout for individual service execution
-RETURN_ONLY_ISSUES: bool = True  # Default to return only fault/issue data
+SERVICE_TIMEOUT_SECONDS: int = int(os.getenv("SERVICE_TIMEOUT_SECONDS", "60"))  # Timeout for individual service execution
+RETURN_ONLY_ISSUES: bool = os.getenv("RETURN_ONLY_ISSUES", "true").lower() == "true"  # Read from environment variable
 
 @dataclass
 class IbdiagnetDataset:
@@ -227,7 +226,6 @@ class AnalysisService:
                 ("power_sensors", "Running Power Sensors analysis...", self._run_power_sensors_service),
                 ("routing_config", "Running Routing Config analysis...", self._run_routing_config_service),
                 ("temp_alerts", "Running Temperature Alerts analysis...", self._run_temp_alerts_service),
-                ("credit_watchdog", "Running Credit Watchdog analysis...", self._run_credit_watchdog_service),
                 ("pci_performance", "Running PCI Performance analysis...", self._run_pci_performance_service),
                 ("per_lane_performance", "Running Per-Lane Performance analysis...", self._run_per_lane_performance_service),
                 ("n2n_security", "Running N2N Security analysis...", self._run_n2n_security_service),
@@ -287,7 +285,6 @@ class AnalysisService:
             power_sensors_analysis = service_results["power_sensors"]
             routing_config_analysis = service_results["routing_config"]
             temp_alerts_analysis = service_results["temp_alerts"]
-            credit_watchdog_analysis = service_results["credit_watchdog"]
             pci_performance_analysis = service_results["pci_performance"]
             per_lane_performance_analysis = service_results["per_lane_performance"]
             n2n_security_analysis = service_results["n2n_security"]
@@ -324,7 +321,6 @@ class AnalysisService:
         power_sensors_rows = power_sensors_analysis.data
         routing_config_rows = routing_config_analysis.data
         temp_alerts_rows = temp_alerts_analysis.data
-        credit_watchdog_rows = credit_watchdog_analysis.data
         pci_performance_rows = pci_performance_analysis.data
         per_lane_performance_rows = per_lane_performance_analysis.data
         n2n_security_rows = n2n_security_analysis.data
@@ -383,9 +379,7 @@ class AnalysisService:
             "extended_switch_info": extended_switch_info_rows,
             "power_sensors": power_sensors_rows,
             "routing_config": routing_config_rows,
-            "temp_alerts": temp_alerts_rows,
-            "credit_watchdog": credit_watchdog_rows,
-            "pci_performance": pci_performance_rows,
+            "temp_alerts": temp_alerts_rows,            "pci_performance": pci_performance_rows,
             "per_lane_performance": per_lane_performance_rows,
             "n2n_security": n2n_security_rows,
         }
@@ -504,9 +498,7 @@ class AnalysisService:
             "extended_switch_info_summary": extended_switch_info_analysis.summary,
             "power_sensors_summary": power_sensors_analysis.summary,
             "routing_config_summary": routing_config_analysis.summary,
-            "temp_alerts_summary": temp_alerts_analysis.summary,
-            "credit_watchdog_summary": credit_watchdog_analysis.summary,
-            "pci_performance_summary": pci_performance_analysis.summary,
+            "temp_alerts_summary": temp_alerts_analysis.summary,            "pci_performance_summary": pci_performance_analysis.summary,
             "per_lane_performance_summary": per_lane_performance_analysis.summary,
             "n2n_security_summary": n2n_security_analysis.summary,
             "warnings_by_category": warnings_by_category,
@@ -546,9 +538,7 @@ class AnalysisService:
             "extended_switch_info": "extended_switch_info",
             "power_sensors": "power_sensors",
             "routing_config": "routing_config",
-            "temp_alerts": "temp_alerts",
-            "credit_watchdog": "credit_watchdog",
-            "pci_performance": "pci_performance",
+            "temp_alerts": "temp_alerts",            "pci_performance": "pci_performance",
             "per_lane_performance": "per_lane_performance",
             "n2n_security": "n2n_security",
         }
@@ -718,10 +708,6 @@ class AnalysisService:
 
     def _run_temp_alerts_service(self, target_dir: Path):
         service = TempAlertsService(dataset_root=target_dir)
-        return service.run()
-
-    def _run_credit_watchdog_service(self, target_dir: Path):
-        service = CreditWatchdogService(dataset_root=target_dir)
         return service.run()
 
     def _run_pci_performance_service(self, target_dir: Path):
