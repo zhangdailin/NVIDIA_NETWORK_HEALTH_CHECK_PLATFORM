@@ -65,3 +65,6 @@ htmlcov/
 # Lock files (optional - uncomment if you want to ignore them)
 # package-lock.json
 # frontend/package-lock.json
+backend/uploads/
+backend/__pycache__/
+.claude/settings.local.json
