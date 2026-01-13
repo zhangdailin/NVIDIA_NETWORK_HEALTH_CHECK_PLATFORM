@@ -190,6 +190,11 @@ const summarizeBerHealth = (berData = []) => {
   rows.forEach(row => {
     const severity = String(row.SymbolBERSeverity || row.Severity || '').toLowerCase()
     const eventName = String(row.EventName || row.Issues || '').toLowerCase()
+
+    // 检查是否有 Symbol Error（与 BERAnalysis.jsx 保持一致）
+    const hasSymbolErrors = toNumber(row['Symbol Err'] ?? row.SymbolErr ?? row.symbolErr) > 0
+    const anomaly = row['IBH Anomaly'] || row.IBHAnomaly
+
     const normalized = {
       nodeName: row['Node Name'] || row.NodeName || 'Unknown',
       nodeGuid: row.NodeGUID || row['Node GUID'] || '',
@@ -201,9 +206,17 @@ const summarizeBerHealth = (berData = []) => {
       severity: severity || 'info',
     }
 
-    if (severity === 'critical') critical.push(normalized)
-    else if (severity === 'warning') warning.push(normalized)
-    else if (eventName.includes('no_threshold')) noThreshold.push(normalized)
+    // 使用与 BERAnalysis.jsx 相同的逻辑
+    if (severity === 'critical' || severity === 'error') {
+      critical.push(normalized)
+    } else if (severity === 'warning' || severity === 'warn') {
+      warning.push(normalized)
+    } else if (hasSymbolErrors && anomaly) {
+      // 有 Symbol Error 且有 IBH Anomaly 的端口也算作警告
+      warning.push(normalized)
+    } else if (eventName.includes('no_threshold')) {
+      noThreshold.push(normalized)
+    }
   })
 
   critical.sort((a, b) => b.log10Value - a.log10Value)

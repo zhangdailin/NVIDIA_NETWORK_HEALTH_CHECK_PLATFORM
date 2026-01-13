@@ -87,37 +87,10 @@ function HcaAnalysis({ hcaData, firmwareWarnings = [], pciWarnings = [], summary
     if (fwVersion) fwVersions.add(fwVersion)
   })
 
-  // 指标卡片配置
-  const metricCards = [
-    {
-      key: 'devices',
-      label: '设备总数',
-      value: summary?.total ?? rows.length,
-      description: 'HCA 设备',
-      icon: Cpu,
-    },
-    {
-      key: 'outdated',
-      label: '固件过时',
-      value: summary?.outdatedFwCount ?? criticalCount,
-      description: '需要升级',
-      icon: AlertTriangle,
-    },
-    {
-      key: 'psid',
-      label: 'PSID 问题',
-      value: summary?.psidIssueCount ?? warningCount,
-      description: '不支持的 PSID',
-      icon: AlertCircle,
-    },
-    {
-      key: 'healthy',
-      label: '健康',
-      value: healthyCount,
-      description: '设备正常',
-      icon: CheckCircle,
-    },
-  ]
+  // 不再使用自定义 metricCards，让 UnifiedAnalysisPage 使用前端统一计算
+
+
+  // 这样可以确保顶部指标卡片和下方筛选条的数量一致
 
   // 预览表列配置
   const previewColumns = [
@@ -181,7 +154,6 @@ function HcaAnalysis({ hcaData, firmwareWarnings = [], pciWarnings = [], summary
       emptyHint="请确认采集的数据包中包含 HCA 设备信息。"
       data={hcaData}
       summary={summary}
-      metricCards={metricCards}
       getSeverity={getSeverity}
       getIssueReason={getIssueReason}
       previewColumns={previewColumns}

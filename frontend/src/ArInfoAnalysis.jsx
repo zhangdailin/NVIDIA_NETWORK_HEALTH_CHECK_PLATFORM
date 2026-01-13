@@ -57,37 +57,10 @@ function ArInfoAnalysis({ arInfoData, summary }) {
   const warningCount = rows.filter(r => getSeverity(r) === 'warning').length
   const healthyCount = rows.length - criticalCount - warningCount
 
-  // 指标卡片配置
-  const metricCards = [
-    {
-      key: 'switches',
-      label: '交换机总数',
-      value: summary?.total_switches ?? rows.length,
-      description: '支持AR的交换机',
-      icon: Shuffle,
-    },
-    {
-      key: 'fr_enabled',
-      label: 'FR已启用',
-      value: summary?.fr_enabled ?? 0,
-      description: '快速恢复',
-      icon: CheckCircle,
-    },
-    {
-      key: 'hbf_enabled',
-      label: 'HBF已启用',
-      value: summary?.hbf_enabled ?? 0,
-      description: '哈希转发',
-      icon: CheckCircle,
-    },
-    {
-      key: 'healthy',
-      label: '健康',
-      value: summary?.healthy_count ?? healthyCount,
-      description: '配置正常',
-      icon: CheckCircle,
-    },
-  ]
+  // 不再使用自定义 metricCards，让 UnifiedAnalysisPage 使用前端统一计算
+
+
+  // 这样可以确保顶部指标卡片和下方筛选条的数量一致
 
   // 预览表列配置
   const previewColumns = [
@@ -131,7 +104,6 @@ function ArInfoAnalysis({ arInfoData, summary }) {
       emptyHint="请确认采集的数据包中包含自适应路由信息。"
       data={arInfoData}
       summary={summary}
-      metricCards={metricCards}
       getSeverity={getSeverity}
       getIssueReason={getIssueReason}
       previewColumns={previewColumns}

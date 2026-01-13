@@ -76,42 +76,8 @@ function CableAnalysis({ cableData, summary }) {
     return '健康'
   }
 
-  // 指标卡片配置
-  const totalPorts = summary?.total_cables ?? (cableData?.length || 0)
-  const criticalCount = summary?.critical_count ?? 0
-  const warningCount = summary?.warning_count ?? 0
-  const healthyCount = summary?.healthy_count ?? Math.max(totalPorts - criticalCount - warningCount, 0)
-
-  const metricCards = [
-    {
-      key: 'total',
-      label: '总端口数',
-      value: totalPorts,
-      description: '全部检测端口',
-      icon: Database,
-    },
-    {
-      key: 'critical',
-      label: '严重问题',
-      value: criticalCount,
-      description: '温度 ≥80°C 或光功率告警',
-      icon: Thermometer,
-    },
-    {
-      key: 'warning',
-      label: '警告',
-      value: warningCount,
-      description: '温度 ≥70°C 或规格不合规',
-      icon: AlertTriangle,
-    },
-    {
-      key: 'healthy',
-      label: '健康端口',
-      value: healthyCount,
-      description: '无异常端口',
-      icon: Cable,
-    },
-  ]
+  // 不再使用后端 summary 的统计数据，让 UnifiedAnalysisPage 使用前端统一计算
+  // 这样可以确保顶部指标卡片和下方筛选条的数量一致
 
   // 预览表列配置
   const previewColumns = [
@@ -175,7 +141,6 @@ function CableAnalysis({ cableData, summary }) {
       data={cableData}
       summary={summary}
       totalRows={summary?.cable_info_rows ?? cableData?.length}
-      metricCards={metricCards}
       getSeverity={getSeverity}
       getIssueReason={getIssueReason}
       topPreviewLimit={10}

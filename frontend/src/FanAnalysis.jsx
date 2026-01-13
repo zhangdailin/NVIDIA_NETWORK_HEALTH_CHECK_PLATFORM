@@ -66,37 +66,10 @@ function FanAnalysis({ fanData, summary }) {
     return '正常'
   }
 
-  // 指标卡片配置
-  const metricCards = [
-    {
-      key: 'total',
-      label: '风扇总数',
-      value: summary?.total_fans ?? rows.length,
-      description: '检测到的风扇传感器',
-      icon: Fan,
-    },
-    {
-      key: 'critical',
-      label: '严重问题',
-      value: summary?.critical_count ?? 0,
-      description: '风扇故障或转速严重偏低',
-      icon: AlertTriangle,
-    },
-    {
-      key: 'warning',
-      label: '警告',
-      value: summary?.warning_count ?? 0,
-      description: '转速偏低或偏高',
-      icon: ThermometerSun,
-    },
-    {
-      key: 'healthy',
-      label: '健康',
-      value: summary?.healthy_count ?? 0,
-      description: '转速正常',
-      icon: CheckCircle,
-    },
-  ]
+  // 不再使用自定义 metricCards，让 UnifiedAnalysisPage 使用前端统一计算
+
+
+  // 这样可以确保顶部指标卡片和下方筛选条的数量一致
 
   // 预览表列配置
   const previewColumns = [
@@ -151,7 +124,6 @@ function FanAnalysis({ fanData, summary }) {
       emptyHint="请确认采集的数据包中包含风扇传感器信息。"
       data={fanData}
       summary={summary}
-      metricCards={metricCards}
       getSeverity={getSeverity}
       getIssueReason={getIssueReason}
       previewColumns={previewColumns}

@@ -64,37 +64,10 @@ function PmDeltaAnalysis({ pmDeltaData, summary }) {
   const warningCount = rows.filter(r => getSeverity(r) === 'warning').length
   const healthyCount = rows.length - criticalCount - warningCount
 
-  // 指标卡片配置
-  const metricCards = [
-    {
-      key: 'total',
-      label: '采样端口',
-      value: summary?.total_ports_sampled ?? rows.length,
-      description: '诊断期间采样',
-      icon: BarChart2,
-    },
-    {
-      key: 'critical',
-      label: '严重问题',
-      value: summary?.critical_count ?? criticalCount,
-      description: 'FEC不可纠正/链路错误',
-      icon: AlertTriangle,
-    },
-    {
-      key: 'warning',
-      label: '警告',
-      value: summary?.warning_count ?? warningCount,
-      description: '中继错误或轻微问题',
-      icon: AlertCircle,
-    },
-    {
-      key: 'healthy',
-      label: '健康',
-      value: summary?.healthy_count ?? healthyCount,
-      description: '计数器正常',
-      icon: CheckCircle,
-    },
-  ]
+  // 不再使用自定义 metricCards，让 UnifiedAnalysisPage 使用前端统一计算
+
+
+  // 这样可以确保顶部指标卡片和下方筛选条的数量一致
 
   // 预览表列配置
   const previewColumns = [
@@ -143,7 +116,6 @@ function PmDeltaAnalysis({ pmDeltaData, summary }) {
       emptyHint="请确认采集的数据包中包含性能计数器增量信息。"
       data={pmDeltaData}
       summary={summary}
-      metricCards={metricCards}
       getSeverity={getSeverity}
       getIssueReason={getIssueReason}
       previewColumns={previewColumns}

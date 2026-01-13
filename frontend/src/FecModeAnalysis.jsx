@@ -56,37 +56,10 @@ function FecModeAnalysis({ fecModeData, summary }) {
   const warningCount = rows.filter(r => getSeverity(r) === 'warning').length
   const healthyCount = rows.length - criticalCount - warningCount
 
-  // 指标卡片配置
-  const metricCards = [
-    {
-      key: 'total',
-      label: '端口总数',
-      value: summary?.total_ports ?? rows.length,
-      description: '已分析端口',
-      icon: Shield,
-    },
-    {
-      key: 'mismatch',
-      label: '配置不匹配',
-      value: summary?.mismatch_count ?? criticalCount,
-      description: 'FEC配置问题',
-      icon: AlertTriangle,
-    },
-    {
-      key: 'no_fec',
-      label: '无FEC',
-      value: summary?.ports_without_fec ?? warningCount,
-      description: '未启用FEC',
-      icon: AlertCircle,
-    },
-    {
-      key: 'healthy',
-      label: '健康',
-      value: summary?.healthy_count ?? healthyCount,
-      description: 'FEC正常',
-      icon: CheckCircle,
-    },
-  ]
+  // 不再使用自定义 metricCards，让 UnifiedAnalysisPage 使用前端统一计算
+
+
+  // 这样可以确保顶部指标卡片和下方筛选条的数量一致
 
   // 预览表列配置
   const previewColumns = [
@@ -129,7 +102,6 @@ function FecModeAnalysis({ fecModeData, summary }) {
       emptyHint="请确认采集的数据包中包含FEC配置信息。"
       data={fecModeData}
       summary={summary}
-      metricCards={metricCards}
       getSeverity={getSeverity}
       getIssueReason={getIssueReason}
       previewColumns={previewColumns}

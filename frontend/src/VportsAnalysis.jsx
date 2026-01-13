@@ -53,37 +53,10 @@ function VportsAnalysis({ vportsData, summary }) {
   const warningCount = rows.filter(r => getSeverity(r) === 'warning').length
   const healthyCount = rows.length - criticalCount - warningCount
 
-  // 指标卡片配置
-  const metricCards = [
-    {
-      key: 'vnodes',
-      label: 'VNode总数',
-      value: summary?.total_vnodes ?? rows.length,
-      description: '虚拟节点',
-      icon: Box,
-    },
-    {
-      key: 'vports',
-      label: 'VPort总数',
-      value: summary?.total_vports ?? 0,
-      description: '虚拟端口',
-      icon: Box,
-    },
-    {
-      key: 'warning',
-      label: '警告',
-      value: summary?.warning_count ?? warningCount,
-      description: '状态异常',
-      icon: AlertCircle,
-    },
-    {
-      key: 'healthy',
-      label: '健康',
-      value: summary?.healthy_count ?? healthyCount,
-      description: '状态正常',
-      icon: CheckCircle,
-    },
-  ]
+  // 不再使用自定义 metricCards，让 UnifiedAnalysisPage 使用前端统一计算
+
+
+  // 这样可以确保顶部指标卡片和下方筛选条的数量一致
 
   // 预览表列配置
   const previewColumns = [
@@ -125,7 +98,6 @@ function VportsAnalysis({ vportsData, summary }) {
       emptyHint="请确认采集的数据包中包含虚拟端口信息。"
       data={vportsData}
       summary={summary}
-      metricCards={metricCards}
       getSeverity={getSeverity}
       getIssueReason={getIssueReason}
       previewColumns={previewColumns}

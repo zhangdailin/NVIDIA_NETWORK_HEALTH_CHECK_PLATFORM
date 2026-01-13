@@ -5,15 +5,19 @@
 
 export const ensureArray = (value) => (Array.isArray(value) ? value : [])
 
-export const toNumber = (value) => {
-  const num = Number(value)
-  return Number.isFinite(num) ? num : 0
-}
-
-export const toFiniteNumber = (value, fallback = null) => {
+/**
+ * 安全转换为数字
+ * @param {*} value - 要转换的值
+ * @param {number} fallback - 转换失败时的默认值
+ * @returns {number} 转换后的数字
+ */
+export const toNumber = (value, fallback = 0) => {
   const num = Number(value)
   return Number.isFinite(num) ? num : fallback
 }
+
+// 向后兼容的别名
+export const toFiniteNumber = toNumber
 
 export const formatCount = (value) => {
   const num = toNumber(value)
@@ -30,40 +34,56 @@ export const buildPortKey = (row) => {
 }
 
 /**
- * 严重度配置
+ * 严重度配置（统一的配置对象）
  */
-export const SEVERITY_ORDER = { critical: 0, warning: 1, info: 2, ok: 3, normal: 3 }
-export const SEVERITY_LABEL = { critical: '严重', warning: '警告', info: '信息', ok: '正常', normal: '正常' }
-
-/**
- * 严重度筛选条颜色配置
- */
-export const SEVERITY_CHIP_STYLES = {
+export const SEVERITY_CONFIG = {
   critical: {
     label: '严重',
+    order: 0,
     color: '#b91c1c',
     background: '#fee2e2',
     dotClass: 'severity-critical',
   },
   warning: {
     label: '警告',
+    order: 1,
     color: '#92400e',
     background: '#fef3c7',
     dotClass: 'severity-warning',
   },
   info: {
     label: '信息',
+    order: 2,
     color: '#1e40af',
     background: '#dbeafe',
     dotClass: 'severity-info',
   },
   ok: {
     label: '健康',
+    order: 3,
+    color: '#166534',
+    background: '#d1fae5',
+    dotClass: 'severity-ok',
+  },
+  normal: {
+    label: '正常',
+    order: 3,
     color: '#166534',
     background: '#d1fae5',
     dotClass: 'severity-ok',
   },
 }
+
+// 向后兼容的导出
+export const SEVERITY_ORDER = Object.fromEntries(
+  Object.entries(SEVERITY_CONFIG).map(([key, value]) => [key, value.order])
+)
+
+export const SEVERITY_LABEL = Object.fromEntries(
+  Object.entries(SEVERITY_CONFIG).map(([key, value]) => [key, value.label])
+)
+
+export const SEVERITY_CHIP_STYLES = SEVERITY_CONFIG
 
 /**
  * 从行数据中提取严重度
@@ -101,6 +121,47 @@ export const extractSeverityFromRow = (row, severityFields = null) => {
     }
   }
   return null
+}
+
+/**
+ * 创建标准的严重度判断函数
+ *
+ * 这个工厂函数用于减少34个分析组件中重复的 getSeverity 逻辑
+ *
+ * @param {Function} customLogic - 自定义逻辑函数，返回 'critical' | 'warning' | 'info' | 'ok' | null
+ *                                  如果返回 null，则继续使用标准逻辑
+ * @returns {Function} getSeverity 函数
+ *
+ * @example
+ * // 简单使用（只使用标准逻辑）
+ * const getSeverity = createSeverityChecker()
+ *
+ * @example
+ * // 带自定义逻辑
+ * const getSeverity = createSeverityChecker((row) => {
+ *   const hasSymbolErrors = toNumber(row['Symbol Err']) > 0
+ *   const anomaly = row['IBH Anomaly']
+ *   if (hasSymbolErrors && anomaly) return 'warning'
+ *   return null  // 返回 null 继续使用标准逻辑
+ * })
+ */
+export const createSeverityChecker = (customLogic = null) => {
+  return (row) => {
+    // 标准逻辑：检查 Severity 字段
+    const severity = String(row.Severity || '').toLowerCase()
+    if (severity === 'critical' || severity === 'error') return 'critical'
+    if (severity === 'warning' || severity === 'warn') return 'warning'
+    if (severity === 'info') return 'info'
+    if (severity === 'ok' || severity === 'normal') return 'ok'
+
+    // 自定义逻辑
+    if (customLogic) {
+      const result = customLogic(row)
+      if (result) return result
+    }
+
+    return 'ok'
+  }
 }
 
 /**

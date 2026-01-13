@@ -58,37 +58,10 @@ function PciPerformanceAnalysis({ pciPerformanceData, summary }) {
   const warningCount = rows.filter(r => getSeverity(r) === 'warning').length
   const healthyCount = rows.length - criticalCount - warningCount
 
-  // 指标卡片配置
-  const metricCards = [
-    {
-      key: 'nodes',
-      label: '节点总数',
-      value: summary?.total_nodes ?? rows.length,
-      description: 'PCIe 设备',
-      icon: HardDrive,
-    },
-    {
-      key: 'degraded',
-      label: '降级',
-      value: summary?.degraded_count ?? criticalCount,
-      description: 'PCIe 降级',
-      icon: AlertTriangle,
-    },
-    {
-      key: 'aer_errors',
-      label: 'AER 错误',
-      value: summary?.aer_error_nodes ?? 0,
-      description: 'AER 错误节点',
-      icon: AlertCircle,
-    },
-    {
-      key: 'healthy',
-      label: '健康',
-      value: healthyCount,
-      description: 'PCIe 正常',
-      icon: CheckCircle,
-    },
-  ]
+  // 不再使用自定义 metricCards，让 UnifiedAnalysisPage 使用前端统一计算
+
+
+  // 这样可以确保顶部指标卡片和下方筛选条的数量一致
 
   // 预览表列配置
   const previewColumns = [
@@ -142,7 +115,6 @@ function PciPerformanceAnalysis({ pciPerformanceData, summary }) {
       emptyHint="请确认采集的数据包中包含 PCIe 性能信息。"
       data={pciPerformanceData}
       summary={summary}
-      metricCards={metricCards}
       getSeverity={getSeverity}
       getIssueReason={getIssueReason}
       previewColumns={previewColumns}

@@ -46,37 +46,10 @@ function SharpAnalysis({ sharpData, summary }) {
   const warningCount = rows.filter(r => getSeverity(r) === 'warning').length
   const healthyCount = rows.length - criticalCount - warningCount
 
-  // 指标卡片配置
-  const metricCards = [
-    {
-      key: 'nodes',
-      label: 'SHARP节点',
-      value: summary?.total_sharp_nodes ?? rows.length,
-      description: '聚合节点',
-      icon: BrainCircuit,
-    },
-    {
-      key: 'tree_capacity',
-      label: '树容量',
-      value: summary?.total_tree_capacity ?? 0,
-      description: '总树容量',
-      icon: BrainCircuit,
-    },
-    {
-      key: 'jobs_capacity',
-      label: 'Jobs容量',
-      value: summary?.total_jobs_capacity ?? 0,
-      description: '总Jobs容量',
-      icon: BrainCircuit,
-    },
-    {
-      key: 'healthy',
-      label: '健康',
-      value: summary?.healthy_count ?? healthyCount,
-      description: '节点正常',
-      icon: CheckCircle,
-    },
-  ]
+  // 不再使用自定义 metricCards，让 UnifiedAnalysisPage 使用前端统一计算
+
+
+  // 这样可以确保顶部指标卡片和下方筛选条的数量一致
 
   // 预览表列配置
   const previewColumns = [
@@ -120,7 +93,6 @@ function SharpAnalysis({ sharpData, summary }) {
       emptyHint="请确认采集的数据包中包含SHARP信息。"
       data={sharpData}
       summary={summary}
-      metricCards={metricCards}
       getSeverity={getSeverity}
       getIssueReason={getIssueReason}
       previewColumns={previewColumns}

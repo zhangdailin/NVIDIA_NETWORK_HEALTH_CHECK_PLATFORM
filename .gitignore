@@ -62,6 +62,12 @@ htmlcov/
 *.temp
 *.bak
 
+# Maintenance scripts
+backend/services/*.sh
+
+# Generated reports
+backend/verification_report.json
+
 # Lock files (optional - uncomment if you want to ignore them)
 # package-lock.json
 # frontend/package-lock.json

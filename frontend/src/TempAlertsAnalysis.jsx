@@ -61,37 +61,10 @@ function TempAlertsAnalysis({ tempAlertsData, summary }) {
   const warningCount = rows.filter(r => getSeverity(r) === 'warning').length
   const healthyCount = rows.length - criticalCount - warningCount
 
-  // 指标卡片配置
-  const metricCards = [
-    {
-      key: 'sensors',
-      label: '传感器总数',
-      value: summary?.total_sensors ?? rows.length,
-      description: '温度传感器',
-      icon: ThermometerSun,
-    },
-    {
-      key: 'critical',
-      label: '严重问题',
-      value: summary?.critical_count ?? summary?.over_threshold_count ?? criticalCount,
-      description: '超过阈值',
-      icon: AlertTriangle,
-    },
-    {
-      key: 'warning',
-      label: '警告',
-      value: summary?.warning_count ?? warningCount,
-      description: '接近阈值',
-      icon: AlertCircle,
-    },
-    {
-      key: 'healthy',
-      label: '健康',
-      value: summary?.healthy_sensors ?? healthyCount,
-      description: '温度正常',
-      icon: CheckCircle,
-    },
-  ]
+  // 不再使用自定义 metricCards，让 UnifiedAnalysisPage 使用前端统一计算
+
+
+  // 这样可以确保顶部指标卡片和下方筛选条的数量一致
 
   // 预览表列配置
   const previewColumns = [
@@ -141,7 +114,6 @@ function TempAlertsAnalysis({ tempAlertsData, summary }) {
       emptyHint="请确认采集的数据包中包含温度阈值信息。"
       data={tempAlertsData}
       summary={summary}
-      metricCards={metricCards}
       getSeverity={getSeverity}
       getIssueReason={getIssueReason}
       previewColumns={previewColumns}

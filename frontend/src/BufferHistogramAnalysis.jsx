@@ -56,37 +56,10 @@ function BufferHistogramAnalysis({ bufferHistogramData, summary }) {
   const warningCount = rows.filter(r => getSeverity(r) === 'warning').length
   const healthyCount = rows.length - criticalCount - warningCount
 
-  // 指标卡片配置
-  const metricCards = [
-    {
-      key: 'total',
-      label: '条目总数',
-      value: summary?.total_entries ?? rows.length,
-      description: '缓冲区条目',
-      icon: BarChart3,
-    },
-    {
-      key: 'critical',
-      label: '严重拥堵',
-      value: summary?.critical_utilization_count ?? criticalCount,
-      description: '利用率>90%',
-      icon: AlertTriangle,
-    },
-    {
-      key: 'warning',
-      label: '警告',
-      value: summary?.high_utilization_count ?? warningCount,
-      description: '利用率>70%',
-      icon: AlertCircle,
-    },
-    {
-      key: 'healthy',
-      label: '健康',
-      value: summary?.healthy_count ?? healthyCount,
-      description: '利用率正常',
-      icon: CheckCircle,
-    },
-  ]
+  // 不再使用自定义 metricCards，让 UnifiedAnalysisPage 使用前端统一计算
+
+
+  // 这样可以确保顶部指标卡片和下方筛选条的数量一致
 
   // 预览表列配置
   const previewColumns = [
@@ -132,7 +105,6 @@ function BufferHistogramAnalysis({ bufferHistogramData, summary }) {
       emptyHint="请确认采集的数据包中包含缓冲区信息。"
       data={bufferHistogramData}
       summary={summary}
-      metricCards={metricCards}
       getSeverity={getSeverity}
       getIssueReason={getIssueReason}
       previewColumns={previewColumns}

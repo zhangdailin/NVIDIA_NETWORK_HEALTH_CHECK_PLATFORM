@@ -58,37 +58,10 @@ function ExtendedPortInfoAnalysis({ extendedPortInfoData, summary }) {
   const warningCount = rows.filter(r => getSeverity(r) === 'warning').length
   const healthyCount = rows.length - criticalCount - warningCount
 
-  // 指标卡片配置
-  const metricCards = [
-    {
-      key: 'total',
-      label: '端口总数',
-      value: summary?.total_ports ?? rows.length,
-      description: '已分析的端口',
-      icon: PlugZap,
-    },
-    {
-      key: 'unhealthy',
-      label: '不健康端口',
-      value: summary?.unhealthy_ports ?? criticalCount,
-      description: '存在问题',
-      icon: AlertTriangle,
-    },
-    {
-      key: 'warning',
-      label: '警告',
-      value: summary?.warning_count ?? warningCount,
-      description: '带宽利用率高',
-      icon: AlertCircle,
-    },
-    {
-      key: 'healthy',
-      label: '健康',
-      value: summary?.healthy_count ?? healthyCount,
-      description: '端口正常',
-      icon: CheckCircle,
-    },
-  ]
+  // 不再使用自定义 metricCards，让 UnifiedAnalysisPage 使用前端统一计算
+
+
+  // 这样可以确保顶部指标卡片和下方筛选条的数量一致
 
   // 预览表列配置
   const previewColumns = [
@@ -139,7 +112,6 @@ function ExtendedPortInfoAnalysis({ extendedPortInfoData, summary }) {
       emptyHint="请确认采集的数据包中包含扩展端口信息。"
       data={extendedPortInfoData}
       summary={summary}
-      metricCards={metricCards}
       getSeverity={getSeverity}
       getIssueReason={getIssueReason}
       previewColumns={previewColumns}

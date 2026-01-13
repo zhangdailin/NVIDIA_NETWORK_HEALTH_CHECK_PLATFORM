@@ -48,37 +48,10 @@ function PerLanePerformanceAnalysis({ perLanePerformanceData, summary }) {
   const warningCount = rows.filter(r => getSeverity(r) === 'warning').length
   const healthyCount = rows.length - criticalCount - warningCount
 
-  // 指标卡片配置
-  const metricCards = [
-    {
-      key: 'lanes',
-      label: 'Lane 总数',
-      value: summary?.total_lanes_analyzed?.toLocaleString() ?? rows.length,
-      description: 'Per-Lane 分析',
-      icon: Layers,
-    },
-    {
-      key: 'ports',
-      label: '端口数',
-      value: summary?.total_ports_analyzed ?? 0,
-      description: '分析的端口',
-      icon: Layers,
-    },
-    {
-      key: 'issues',
-      label: '问题 Lane',
-      value: summary?.lanes_with_issues ?? criticalCount + warningCount,
-      description: '有问题的 Lane',
-      icon: AlertTriangle,
-    },
-    {
-      key: 'healthy',
-      label: '健康',
-      value: healthyCount,
-      description: 'Lane 正常',
-      icon: CheckCircle,
-    },
-  ]
+  // 不再使用自定义 metricCards，让 UnifiedAnalysisPage 使用前端统一计算
+
+
+  // 这样可以确保顶部指标卡片和下方筛选条的数量一致
 
   // 预览表列配置
   const previewColumns = [
@@ -130,7 +103,6 @@ function PerLanePerformanceAnalysis({ perLanePerformanceData, summary }) {
       emptyHint="请确认采集的数据包中包含 Per-Lane 性能信息。"
       data={perLanePerformanceData}
       summary={summary}
-      metricCards={metricCards}
       getSeverity={getSeverity}
       getIssueReason={getIssueReason}
       previewColumns={previewColumns}

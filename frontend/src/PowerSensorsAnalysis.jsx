@@ -53,37 +53,10 @@ function PowerSensorsAnalysis({ powerSensorsData, summary }) {
   const warningCount = rows.filter(r => getSeverity(r) === 'warning').length
   const healthyCount = rows.length - criticalCount - warningCount
 
-  // 指标卡片配置
-  const metricCards = [
-    {
-      key: 'sensors',
-      label: '传感器总数',
-      value: summary?.total_sensors ?? rows.length,
-      description: '电源传感器',
-      icon: Zap,
-    },
-    {
-      key: 'critical',
-      label: '严重问题',
-      value: summary?.critical_count ?? criticalCount,
-      description: '电源故障',
-      icon: AlertTriangle,
-    },
-    {
-      key: 'warning',
-      label: '警告',
-      value: summary?.warning_count ?? warningCount,
-      description: '电源告警',
-      icon: AlertCircle,
-    },
-    {
-      key: 'healthy',
-      label: '健康',
-      value: summary?.healthy_count ?? healthyCount,
-      description: '电源正常',
-      icon: CheckCircle,
-    },
-  ]
+  // 不再使用自定义 metricCards，让 UnifiedAnalysisPage 使用前端统一计算
+
+
+  // 这样可以确保顶部指标卡片和下方筛选条的数量一致
 
   // 预览表列配置
   const previewColumns = [
@@ -131,7 +104,6 @@ function PowerSensorsAnalysis({ powerSensorsData, summary }) {
       emptyHint="请确认采集的数据包中包含电源传感器信息。"
       data={powerSensorsData}
       summary={summary}
-      metricCards={metricCards}
       getSeverity={getSeverity}
       getIssueReason={getIssueReason}
       previewColumns={previewColumns}

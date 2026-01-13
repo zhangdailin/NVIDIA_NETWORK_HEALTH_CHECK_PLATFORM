@@ -56,37 +56,10 @@ function NeighborsAnalysis({ neighborsData, summary }) {
   const warningCount = rows.filter(r => getSeverity(r) === 'warning').length
   const healthyCount = rows.length - criticalCount - warningCount
 
-  // 指标卡片配置
-  const metricCards = [
-    {
-      key: 'entries',
-      label: '邻居条目',
-      value: summary?.total_neighbor_entries ?? rows.length,
-      description: '链路关系',
-      icon: Users,
-    },
-    {
-      key: 'nodes',
-      label: '唯一节点',
-      value: summary?.unique_nodes ?? 0,
-      description: '不同节点数',
-      icon: Users,
-    },
-    {
-      key: 'mismatch',
-      label: '不匹配',
-      value: summary?.mismatched_speeds ?? 0,
-      description: '速度/宽度问题',
-      icon: AlertTriangle,
-    },
-    {
-      key: 'healthy',
-      label: '健康',
-      value: summary?.healthy_count ?? healthyCount,
-      description: '连接正常',
-      icon: CheckCircle,
-    },
-  ]
+  // 不再使用自定义 metricCards，让 UnifiedAnalysisPage 使用前端统一计算
+
+
+  // 这样可以确保顶部指标卡片和下方筛选条的数量一致
 
   // 预览表列配置
   const previewColumns = [
@@ -131,7 +104,6 @@ function NeighborsAnalysis({ neighborsData, summary }) {
       emptyHint="请确认采集的数据包中包含邻居信息。"
       data={neighborsData}
       summary={summary}
-      metricCards={metricCards}
       getSeverity={getSeverity}
       getIssueReason={getIssueReason}
       previewColumns={previewColumns}

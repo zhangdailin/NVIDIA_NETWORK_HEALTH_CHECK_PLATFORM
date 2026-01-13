@@ -44,37 +44,10 @@ function ExtendedSwitchInfoAnalysis({ extendedSwitchInfoData, summary }) {
   const warningCount = rows.filter(r => getSeverity(r) === 'warning').length
   const healthyCount = rows.length - criticalCount - warningCount
 
-  // 指标卡片配置
-  const metricCards = [
-    {
-      key: 'switches',
-      label: '交换机总数',
-      value: summary?.total_switches ?? rows.length,
-      description: '扩展信息',
-      icon: Network,
-    },
-    {
-      key: 'enhanced',
-      label: 'Enhanced Port0',
-      value: summary?.enhanced_port0_count ?? 0,
-      description: '增强端口0',
-      icon: Network,
-    },
-    {
-      key: 'multicast',
-      label: 'Multicast',
-      value: summary?.multicast_enabled_count ?? 0,
-      description: '多播启用',
-      icon: Network,
-    },
-    {
-      key: 'healthy',
-      label: '健康',
-      value: summary?.healthy_count ?? healthyCount,
-      description: '交换机正常',
-      icon: CheckCircle,
-    },
-  ]
+  // 不再使用自定义 metricCards，让 UnifiedAnalysisPage 使用前端统一计算
+
+
+  // 这样可以确保顶部指标卡片和下方筛选条的数量一致
 
   // 预览表列配置
   const previewColumns = [
@@ -117,7 +90,6 @@ function ExtendedSwitchInfoAnalysis({ extendedSwitchInfoData, summary }) {
       emptyHint="请确认采集的数据包中包含扩展交换机信息。"
       data={extendedSwitchInfoData}
       summary={summary}
-      metricCards={metricCards}
       getSeverity={getSeverity}
       getIssueReason={getIssueReason}
       previewColumns={previewColumns}

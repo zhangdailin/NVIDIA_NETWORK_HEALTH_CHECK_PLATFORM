@@ -50,37 +50,10 @@ function SmInfoAnalysis({ smInfoData, summary }) {
   const warningCount = rows.filter(r => getSeverity(r) === 'warning').length
   const healthyCount = rows.length - criticalCount - warningCount
 
-  // 指标卡片配置
-  const metricCards = [
-    {
-      key: 'total',
-      label: 'SM总数',
-      value: summary?.total_sms ?? rows.length,
-      description: '检测到的SM',
-      icon: Settings,
-    },
-    {
-      key: 'critical',
-      label: '严重问题',
-      value: summary?.critical_count ?? criticalCount,
-      description: 'SM故障',
-      icon: AlertTriangle,
-    },
-    {
-      key: 'warning',
-      label: '警告',
-      value: summary?.warning_count ?? warningCount,
-      description: 'SM状态异常',
-      icon: AlertCircle,
-    },
-    {
-      key: 'healthy',
-      label: '健康',
-      value: summary?.healthy_count ?? healthyCount,
-      description: 'SM正常',
-      icon: CheckCircle,
-    },
-  ]
+  // 不再使用自定义 metricCards，让 UnifiedAnalysisPage 使用前端统一计算
+
+
+  // 这样可以确保顶部指标卡片和下方筛选条的数量一致
 
   // 预览表列配置
   const previewColumns = [
@@ -122,7 +95,6 @@ function SmInfoAnalysis({ smInfoData, summary }) {
       emptyHint="请确认采集的数据包中包含Subnet Manager信息。"
       data={smInfoData}
       summary={summary}
-      metricCards={metricCards}
       getSeverity={getSeverity}
       getIssueReason={getIssueReason}
       previewColumns={previewColumns}

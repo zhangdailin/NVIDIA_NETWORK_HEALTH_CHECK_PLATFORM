@@ -49,37 +49,10 @@ function PkeyAnalysis({ pkeyData, summary }) {
   const warningCount = rows.filter(r => getSeverity(r) === 'warning').length
   const healthyCount = rows.length - criticalCount - warningCount
 
-  // 指标卡片配置
-  const metricCards = [
-    {
-      key: 'entries',
-      label: 'PKEY条目',
-      value: summary?.total_pkey_entries ?? rows.length,
-      description: '分区配置条目',
-      icon: Key,
-    },
-    {
-      key: 'partitions',
-      label: '唯一分区',
-      value: summary?.unique_partitions ?? 0,
-      description: '不同的分区数',
-      icon: Key,
-    },
-    {
-      key: 'warning',
-      label: '警告',
-      value: summary?.warning_count ?? warningCount,
-      description: '配置问题',
-      icon: AlertCircle,
-    },
-    {
-      key: 'healthy',
-      label: '健康',
-      value: summary?.healthy_count ?? healthyCount,
-      description: '配置正常',
-      icon: CheckCircle,
-    },
-  ]
+  // 不再使用自定义 metricCards，让 UnifiedAnalysisPage 使用前端统一计算
+
+
+  // 这样可以确保顶部指标卡片和下方筛选条的数量一致
 
   // 预览表列配置
   const previewColumns = [
@@ -126,7 +99,6 @@ function PkeyAnalysis({ pkeyData, summary }) {
       emptyHint="请确认采集的数据包中包含分区密钥信息。"
       data={pkeyData}
       summary={summary}
-      metricCards={metricCards}
       getSeverity={getSeverity}
       getIssueReason={getIssueReason}
       previewColumns={previewColumns}

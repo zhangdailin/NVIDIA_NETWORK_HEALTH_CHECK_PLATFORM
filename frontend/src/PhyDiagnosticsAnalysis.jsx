@@ -47,37 +47,10 @@ function PhyDiagnosticsAnalysis({ phyDiagnosticsData, summary }) {
   const warningCount = rows.filter(r => getSeverity(r) === 'warning').length
   const healthyCount = rows.length - criticalCount - warningCount
 
-  // 指标卡片配置
-  const metricCards = [
-    {
-      key: 'total',
-      label: '端口总数',
-      value: summary?.total_ports ?? rows.length,
-      description: '已分析端口',
-      icon: Radio,
-    },
-    {
-      key: 'with_data',
-      label: '有数据端口',
-      value: summary?.ports_with_data ?? 0,
-      description: '有诊断数据',
-      icon: Radio,
-    },
-    {
-      key: 'warning',
-      label: '警告',
-      value: summary?.warning_count ?? warningCount,
-      description: '诊断异常',
-      icon: AlertCircle,
-    },
-    {
-      key: 'healthy',
-      label: '健康',
-      value: summary?.healthy_count ?? healthyCount,
-      description: '诊断正常',
-      icon: CheckCircle,
-    },
-  ]
+  // 不再使用自定义 metricCards，让 UnifiedAnalysisPage 使用前端统一计算
+
+
+  // 这样可以确保顶部指标卡片和下方筛选条的数量一致
 
   // 预览表列配置
   const previewColumns = [
@@ -118,7 +91,6 @@ function PhyDiagnosticsAnalysis({ phyDiagnosticsData, summary }) {
       emptyHint="请确认采集的数据包中包含PHY诊断信息。"
       data={phyDiagnosticsData}
       summary={summary}
-      metricCards={metricCards}
       getSeverity={getSeverity}
       getIssueReason={getIssueReason}
       previewColumns={previewColumns}

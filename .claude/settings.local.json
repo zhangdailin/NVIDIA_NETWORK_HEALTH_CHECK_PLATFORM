@@ -39,7 +39,9 @@
       "Bash(git cat-file:*)",
       "Bash(sort:*)",
       "Bash(git filter-branch:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(npm run server)",
+      "Bash(do echo \"Processing $file...\")"
     ]
   }
 }

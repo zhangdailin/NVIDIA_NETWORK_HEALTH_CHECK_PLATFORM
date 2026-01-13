@@ -59,37 +59,10 @@ function RoutingAnalysis({ routingData, summary }) {
   const warningCount = rows.filter(r => getSeverity(r) === 'warning').length
   const healthyCount = rows.length - criticalCount - warningCount
 
-  // 指标卡片配置
-  const metricCards = [
-    {
-      key: 'total',
-      label: '端口总数',
-      value: summary?.total_ports ?? rows.length,
-      description: '已分析的端口',
-      icon: GitBranch,
-    },
-    {
-      key: 'critical',
-      label: '严重问题',
-      value: summary?.fr_error_ports ?? criticalCount,
-      description: '快速恢复错误',
-      icon: AlertTriangle,
-    },
-    {
-      key: 'warning',
-      label: '警告',
-      value: summary?.rn_error_ports ?? warningCount,
-      description: 'RN错误或HBF回退',
-      icon: AlertCircle,
-    },
-    {
-      key: 'healthy',
-      label: '健康',
-      value: summary?.healthy_count ?? healthyCount,
-      description: '运行正常',
-      icon: CheckCircle,
-    },
-  ]
+  // 不再使用自定义 metricCards，让 UnifiedAnalysisPage 使用前端统一计算
+
+
+  // 这样可以确保顶部指标卡片和下方筛选条的数量一致
 
   // 预览表列配置
   const previewColumns = [
@@ -137,7 +110,6 @@ function RoutingAnalysis({ routingData, summary }) {
       emptyHint="请确认采集的数据包中包含路由信息。"
       data={routingData}
       summary={summary}
-      metricCards={metricCards}
       getSeverity={getSeverity}
       getIssueReason={getIssueReason}
       previewColumns={previewColumns}

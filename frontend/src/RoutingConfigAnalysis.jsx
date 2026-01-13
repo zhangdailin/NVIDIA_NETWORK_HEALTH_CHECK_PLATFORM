@@ -51,37 +51,10 @@ function RoutingConfigAnalysis({ routingConfigData, summary }) {
   const warningCount = rows.filter(r => getSeverity(r) === 'warning').length
   const healthyCount = rows.length - criticalCount - warningCount
 
-  // 指标卡片配置
-  const metricCards = [
-    {
-      key: 'switches',
-      label: '交换机总数',
-      value: summary?.total_switches ?? rows.length,
-      description: '路由配置',
-      icon: Router,
-    },
-    {
-      key: 'hbf',
-      label: 'HBF已启用',
-      value: summary?.hbf_enabled_count ?? 0,
-      description: '哈希转发',
-      icon: Router,
-    },
-    {
-      key: 'pfrn',
-      label: 'PFRN已启用',
-      value: summary?.pfrn_enabled_count ?? 0,
-      description: '精确转发',
-      icon: Router,
-    },
-    {
-      key: 'healthy',
-      label: '健康',
-      value: summary?.healthy_count ?? healthyCount,
-      description: '配置正常',
-      icon: CheckCircle,
-    },
-  ]
+  // 不再使用自定义 metricCards，让 UnifiedAnalysisPage 使用前端统一计算
+
+
+  // 这样可以确保顶部指标卡片和下方筛选条的数量一致
 
   // 预览表列配置
   const previewColumns = [
@@ -123,7 +96,6 @@ function RoutingConfigAnalysis({ routingConfigData, summary }) {
       emptyHint="请确认采集的数据包中包含路由配置信息。"
       data={routingConfigData}
       summary={summary}
-      metricCards={metricCards}
       getSeverity={getSeverity}
       getIssueReason={getIssueReason}
       previewColumns={previewColumns}

@@ -112,46 +112,8 @@ function BERAnalysis({ berData = [], showOnlyProblematic = false }) {
     return '正常'
   }
 
-  // 计算统计
-  const criticalCount = rows.filter(r => getSeverity(r) === 'critical').length
-  const warningCount = rows.filter(r => getSeverity(r) === 'warning').length
-  const problemCount = rows.filter(r => {
-    const hasSymbolErrors = toNumber(r['Symbol Err'] ?? r.SymbolErr ?? r.symbolErr) > 0
-    const anomaly = r['IBH Anomaly'] || r.IBHAnomaly
-    return hasSymbolErrors && anomaly
-  }).length
-
-  // 指标卡片配置
-  const metricCards = [
-    {
-      key: 'total',
-      label: '总端口数',
-      value: rows.length,
-      description: '全部检测端口',
-      icon: Database,
-    },
-    {
-      key: 'problem',
-      label: '异常端口',
-      value: problemCount,
-      description: 'Symbol Error > 0 的端口',
-      icon: AlertTriangle,
-    },
-    {
-      key: 'critical',
-      label: '严重 BER 问题',
-      value: criticalCount,
-      description: 'BER 超过严重阈值',
-      icon: Shield,
-    },
-    {
-      key: 'warning',
-      label: '警告 BER 问题',
-      value: warningCount,
-      description: 'BER 超过警告阈值',
-      icon: Activity,
-    },
-  ]
+  // 不再使用自定义 metricCards，让 UnifiedAnalysisPage 使用前端统一计算
+  // 这样可以确保顶部指标卡片和下方筛选条的数量一致
 
   // 预览表列配置
   const previewColumns = [
@@ -234,7 +196,6 @@ function BERAnalysis({ berData = [], showOnlyProblematic = false }) {
       emptyHint="当前网络状态良好，未检测到误码率问题。点击'显示全部'查看所有端口。"
       data={enrichedData}
       totalRows={enrichedData.length}
-      metricCards={metricCards}
       getSeverity={getSeverity}
       getIssueReason={getIssueReason}
       topPreviewLimit={10}

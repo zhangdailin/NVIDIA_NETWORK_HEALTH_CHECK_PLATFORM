@@ -88,36 +88,10 @@ function CongestionAnalysis({ xmitData, summary, taskId, serviceName, enableStre
   const criticalCount = summary?.severe_ports ?? severePorts
   const warningCount = summary?.moderate_ports ?? moderatePorts
 
-  const metricCards = [
-    {
-      key: 'total',
-      label: '总端口数',
-      value: totalPorts,
-      description: '全部检测端口',
-      icon: Database,
-    },
-    {
-      key: 'severe',
-      label: '严重拥塞',
-      value: criticalCount,
-      description: 'Wait ≥5% 或 XmitCong ≥5%',
-      icon: XCircle,
-    },
-    {
-      key: 'moderate',
-      label: '中度拥塞',
-      value: warningCount,
-      description: 'Wait 1-5% 或 XmitCong 1-5%',
-      icon: AlertTriangle,
-    },
-    {
-      key: 'linkdown',
-      label: '链路断开',
-      value: linkDownCount,
-      description: 'LinkDownedCounter > 0',
-      icon: Clock,
-    },
-  ]
+  // 不再使用自定义 metricCards，让 UnifiedAnalysisPage 使用前端统一计算
+
+
+  // 这样可以确保顶部指标卡片和下方筛选条的数量一致
 
   // 预览表列配置
   const previewColumns = [
@@ -178,7 +152,6 @@ function CongestionAnalysis({ xmitData, summary, taskId, serviceName, enableStre
       taskId={taskId}
       serviceName={serviceName}
       enableStreaming={enableStreaming}
-      metricCards={metricCards}
       getSeverity={getSeverity}
       getIssueReason={getIssueReason}
       topPreviewLimit={10}

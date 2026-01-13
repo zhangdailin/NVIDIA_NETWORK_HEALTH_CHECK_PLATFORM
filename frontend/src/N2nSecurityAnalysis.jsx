@@ -73,37 +73,10 @@ function N2nSecurityAnalysis({ n2nSecurityData, summary }) {
   const n2nCoveragePct = rows.length > 0 ? ((nodesWithN2N / rows.length) * 100).toFixed(1) : 0
   const keyCoveragePct = rows.length > 0 ? ((nodesWithKeys / rows.length) * 100).toFixed(1) : 0
 
-  // 指标卡片配置
-  const metricCards = [
-    {
-      key: 'nodes',
-      label: '节点总数',
-      value: summary?.total_nodes ?? rows.length,
-      description: 'N2N 安全',
-      icon: Shield,
-    },
-    {
-      key: 'n2n_enabled',
-      label: 'N2N 已启用',
-      value: `${summary?.nodes_with_n2n_enabled ?? nodesWithN2N} (${summary?.n2n_coverage_pct ?? n2nCoveragePct}%)`,
-      description: '加密覆盖',
-      icon: Shield,
-    },
-    {
-      key: 'violations',
-      label: '安全违规',
-      value: summary?.security_violations ?? criticalCount,
-      description: '违规节点',
-      icon: AlertTriangle,
-    },
-    {
-      key: 'healthy',
-      label: '健康',
-      value: healthyCount,
-      description: '配置正确',
-      icon: CheckCircle,
-    },
-  ]
+  // 不再使用自定义 metricCards，让 UnifiedAnalysisPage 使用前端统一计算
+
+
+  // 这样可以确保顶部指标卡片和下方筛选条的数量一致
 
   // 预览表列配置
   const previewColumns = [
@@ -152,7 +125,6 @@ function N2nSecurityAnalysis({ n2nSecurityData, summary }) {
       emptyHint="请确认采集的数据包中包含 N2N 安全信息。"
       data={n2nSecurityData}
       summary={summary}
-      metricCards={metricCards}
       getSeverity={getSeverity}
       getIssueReason={getIssueReason}
       previewColumns={previewColumns}
