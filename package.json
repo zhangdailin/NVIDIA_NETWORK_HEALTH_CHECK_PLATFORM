@@ -11,14 +11,14 @@
     "server": "concurrently \"npm run backend\" \"npm run frontend\"",
     "backend": "cd backend && python -m uvicorn main:app --reload --port 8000 --timeout-keep-alive 300",
     "frontend": "npm run dev --workspace=frontend",
-    "build": "npm run build --workspace=frontend",
-    "build:prod": "npm run build && echo Frontend built successfully! Run 'npm start' to launch the integrated server.",
+    "build": "node build.js",
+    "build:prod": "node build.js",
     "start": "cd backend && python -m uvicorn main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 300",
-    "start:prod": "npm run build:prod && npm start",
+    "start:prod": "npm run build && npm start",
     "install:all": "npm install && cd backend && pip install -r requirements.txt",
     "install:backend": "cd backend && pip install -r requirements.txt",
-    "clean": "rimraf node_modules frontend/node_modules frontend/dist frontend/.vite",
-    "clean:build": "rimraf frontend/dist frontend/.vite"
+    "clean": "rimraf node_modules frontend/node_modules frontend/dist frontend/.vite backend/static",
+    "clean:build": "rimraf frontend/dist frontend/.vite backend/static"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",

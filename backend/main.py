@@ -89,6 +89,33 @@ app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 # Include API router
 app.include_router(router, prefix="/api")
 
+# Serve frontend static files (production mode)
+static_dir = Path(__file__).parent / "static"
+if static_dir.exists():
+    @app.get("/")
+    async def serve_frontend():
+        """Serve the frontend index.html"""
+        index_file = static_dir / "index.html"
+        if index_file.exists():
+            return FileResponse(index_file)
+        return {"message": "Frontend not built. Run 'node build.js' first."}
+
+    # Mount static files for assets (JS, CSS, images)
+    app.mount("/assets", StaticFiles(directory=str(static_dir / "assets")), name="assets")
+
+    # Catch-all route for SPA (must be last)
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        """Serve SPA for all non-API routes"""
+        # Don't intercept API routes
+        if full_path.startswith("api/") or full_path.startswith("docs") or full_path.startswith("redoc"):
+            return {"error": "Not found"}
+
+        index_file = static_dir / "index.html"
+        if index_file.exists():
+            return FileResponse(index_file)
+        return {"message": "Frontend not built. Run 'node build.js' first."}
+
 # Store startup time for health check
 _startup_time = datetime.now()
 

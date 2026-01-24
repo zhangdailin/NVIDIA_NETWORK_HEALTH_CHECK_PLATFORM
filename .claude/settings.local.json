@@ -41,7 +41,9 @@
       "Bash(git filter-branch:*)",
       "Bash(git commit:*)",
       "Bash(npm run server)",
-      "Bash(do echo \"Processing $file...\")"
+      "Bash(do echo \"Processing $file...\")",
+      "Bash(npm run dev)",
+      "Bash(powershell -Command:*)"
     ]
   }
 }

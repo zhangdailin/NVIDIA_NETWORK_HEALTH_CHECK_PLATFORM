@@ -38,7 +38,9 @@ import N2nSecurityAnalysis from './N2nSecurityAnalysis'
 import LatencyAnalysis from './LatencyAnalysis'
 import HealthCheckBoard from './HealthCheckBoard'
 import { HEALTH_CHECK_GROUPS, HEALTH_CHECK_DEFINITIONS } from './healthCheckDefinitions'
+import ModernOverview from './components/ModernOverview'
 import './App.css'
+import './components/ModernOverview.css'
 import DataTable from './DataTable'
 
 // Configuration - use relative URL for proxy support
@@ -738,8 +740,14 @@ function App() {
 
         return (
           <div className="scroll-area">
+            {/* 新的现代化概览页面 */}
+            <ModernOverview
+              analysisData={result.data}
+              onSelectTab={setActiveTab}
+            />
+
             <div className="card">
-              <h2>?? 故障汇总 (所有有问题的内容)</h2>
+              <h2>📊 故障汇总 (所有有问题的内容)</h2>
               <FaultSummary analysisData={result.data} />
             </div>
 
