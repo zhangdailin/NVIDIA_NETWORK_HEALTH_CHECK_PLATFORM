@@ -22,8 +22,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.last_cleanup = time.time()
 
     async def dispatch(self, request: Request, call_next):
-        # Skip rate limiting for health check
-        if request.url.path == "/api/health":
+        # Skip rate limiting for health check and progress endpoints
+        if request.url.path == "/api/health" or "/progress" in request.url.path:
             return await call_next(request)
 
         # Get client IP
