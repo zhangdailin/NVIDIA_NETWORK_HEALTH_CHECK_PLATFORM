@@ -2,7 +2,7 @@ import { AlertTriangle, XCircle, Clock, Activity, Database } from 'lucide-react'
 import UnifiedAnalysisPage from './UnifiedAnalysisPage'
 import { toNumber, formatCount } from './analysisUtils'
 
-function CongestionAnalysis({ xmitData, summary, taskId, serviceName, enableStreaming }) {
+function CongestionAnalysis({ xmitData, summary, totalRows, taskId, serviceName, enableStreaming }) {
   // 定义严重度判断逻辑 - 优先使用后端返回的 CongestionLevel
   const getSeverity = (row) => {
     // 如果后端已经计算了 CongestionLevel，直接使用
@@ -86,7 +86,7 @@ function CongestionAnalysis({ xmitData, summary, taskId, serviceName, enableStre
   // 指标卡片配置
   const totalPorts = summary?.total_ports ?? rows.length
   const criticalCount = summary?.severe_ports ?? severePorts
-  const warningCount = summary?.moderate_ports ?? moderatePorts
+  const warningCount = summary?.warning_ports ?? summary?.moderate_ports ?? moderatePorts
 
   // 不再使用自定义 metricCards，让 UnifiedAnalysisPage 使用前端统一计算
 
@@ -148,7 +148,7 @@ function CongestionAnalysis({ xmitData, summary, taskId, serviceName, enableStre
       emptyHint="当前网络状态良好，未检测到拥塞问题。点击'显示全部'查看所有端口。"
       data={xmitData}
       summary={summary}
-      totalRows={summary?.xmit_wait_rows ?? xmitData?.length}
+      totalRows={totalRows ?? summary?.total_ports ?? summary?.xmit_wait_rows ?? xmitData?.length}
       taskId={taskId}
       serviceName={serviceName}
       enableStreaming={enableStreaming}

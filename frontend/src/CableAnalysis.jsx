@@ -2,7 +2,7 @@ import { Thermometer, Zap, AlertTriangle, Cable, Database } from 'lucide-react'
 import UnifiedAnalysisPage from './UnifiedAnalysisPage'
 import { toNumber, hasAlarmFlag } from './analysisUtils'
 
-function CableAnalysis({ cableData, summary }) {
+function CableAnalysis({ cableData, summary, totalRows }) {
   // 定义严重度判断逻辑
   const getSeverity = (row) => {
     // 优先使用后端返回的 Severity 字段
@@ -140,7 +140,7 @@ function CableAnalysis({ cableData, summary }) {
       emptyHint="当前网络状态良好，未检测到线缆故障。点击'显示全部'查看所有端口。"
       data={cableData}
       summary={summary}
-      totalRows={summary?.cable_info_rows ?? cableData?.length}
+      totalRows={totalRows ?? summary?.total_cables ?? summary?.cable_info_rows ?? cableData?.length}
       getSeverity={getSeverity}
       getIssueReason={getIssueReason}
       topPreviewLimit={10}

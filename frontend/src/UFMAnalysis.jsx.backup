@@ -1,0 +1,1727 @@
+import { useState } from 'react'
+import { AlertTriangle, CheckCircle, XCircle, Thermometer, Cable, Activity, TrendingUp, Award, Zap, BarChart3, Download, ChevronDown, ChevronUp, Search } from 'lucide-react'
+import DataTable from './DataTable'
+
+/**
+ * UFM CSV Analysis Component - Enhanced Version
+ *
+ * Displays comprehensive analysis of UFM CSV data including:
+ * - Health Score Dashboard
+ * - BER (Bit Error Rate) metrics with trends
+ * - Link status and errors
+ * - Temperature monitoring with distribution
+ * - Cable information with charts
+ * - Port error counters with severity
+ * - Performance metrics and bandwidth analysis
+ * - Port distribution statistics
+ */
+function UFMAnalysis({ data }) {
+  const [expandedSections, setExpandedSections] = useState({
+    issues: true,  // 问题汇总默认展开
+    overview: true,
+    health: true,
+    ber: true,
+    berCritical: true,
+    berWarning: true,
+    link: true,
+    linkDown: true,
+    temperature: true,
+    tempHot: true,
+    cables: true,
+    cableTypes: true,
+    cableLengths: true,
+    errors: true,
+    errorPorts: true,
+    performance: true,
+    perfBandwidth: true,
+    perfCongestion: true,
+    distribution: true,
+    distSpeed: true,
+    distWidth: true,
+    distState: true,
+  })
+
+  const [searchTerm, setSearchTerm] = useState('')
+
+  if (!data || !data.analysis) {
+    return <div className="no-data">No UFM analysis data available</div>
+  }
+
+  const { analysis, load_info } = data
+
+  // Helper function to format BER values
+  const formatBER = (value) => {
+    if (!value || value === 0) return 'N/A'
+    return value.toExponential(2)
+  }
+
+  // Helper function to format large numbers
+  const formatNumber = (value) => {
+    if (!value) return '0'
+    if (value >= 1e12) return `${(value / 1e12).toFixed(2)}T`
+    if (value >= 1e9) return `${(value / 1e9).toFixed(2)}G`
+    if (value >= 1e6) return `${(value / 1e6).toFixed(2)}M`
+    if (value >= 1e3) return `${(value / 1e3).toFixed(2)}K`
+    return value.toLocaleString()
+  }
+
+  // Helper function to get severity color
+  const getSeverityColor = (severity) => {
+    switch (severity) {
+      case 'critical': return '#ef4444'
+      case 'warning': return '#eab308'
+      case 'info': return '#3b82f6'
+      default: return '#6b7280'
+    }
+  }
+
+  // Helper function to get health color
+  const getHealthColor = (score) => {
+    if (score >= 90) return '#22c55e'
+    if (score >= 80) return '#84cc16'
+    if (score >= 70) return '#eab308'
+    if (score >= 60) return '#f97316'
+    return '#ef4444'
+  }
+
+  // Toggle section expansion
+  const toggleSection = (section) => {
+    setExpandedSections(prev => ({
+      ...prev,
+      [section]: !prev[section]
+    }))
+  }
+
+  // Export data as JSON
+  const exportData = () => {
+    const dataStr = JSON.stringify(data, null, 2)
+    const dataBlob = new Blob([dataStr], { type: 'application/json' })
+    const url = URL.createObjectURL(dataBlob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `ufm-analysis-${new Date().toISOString()}.json`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  return (
+    <div className="ufm-analysis">
+      {/* Header with Export Button */}
+      <div className="analysis-header">
+        <div className="header-left">
+          <h1 className="main-title">
+            <Activity size={28} />
+            UFM Network Analysis
+          </h1>
+          <p className="subtitle">Comprehensive network health and performance analysis</p>
+        </div>
+        <button onClick={exportData} className="export-button">
+          <Download size={18} />
+          Export Data
+        </button>
+      </div>
+
+      {/* Issues Summary - Critical Problems First */}
+      <div className="analysis-section issues-summary">
+        <div className="section-header" onClick={() => toggleSection('issues')}>
+          <h2 className="section-title">
+            <AlertTriangle size={20} />
+            问题汇总 (Issues Summary)
+          </h2>
+          {expandedSections.issues ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+        </div>
+
+        {expandedSections.issues && (
+          <div className="section-content">
+            {/* Critical Issues */}
+            <div className="issues-critical">
+              <h3 style={{ color: '#ef4444', marginBottom: '16px' }}>
+                <XCircle size={18} style={{ marginRight: '8px' }} />
+                严重问题 (Critical Issues)
+              </h3>
+              <div className="issue-cards">
+                {/* Critical BER Ports */}
+                {analysis.ber_analysis?.critical_ports?.length > 0 && (
+                  <div className="issue-card critical">
+                    <div className="issue-header">
+                      <TrendingUp size={18} />
+                      <span>严重 BER 错误</span>
+                    </div>
+                    <div className="issue-count">{analysis.ber_analysis.critical_ports.length}</div>
+                    <div className="issue-desc">端口 BER &gt; 1e-6</div>
+                    <button
+                      onClick={() => {
+                        const element = document.querySelector('.critical-section')
+                        element?.scrollIntoView({ behavior: 'smooth' })
+                      }}
+                      className="view-details-btn"
+                    >
+                      查看详情
+                    </button>
+                  </div>
+                )}
+
+                {/* Links Down */}
+                {analysis.link_status?.summary?.links_down > 0 && (
+                  <div className="issue-card critical">
+                    <div className="issue-header">
+                      <Activity size={18} />
+                      <span>链路中断</span>
+                    </div>
+                    <div className="issue-count">{analysis.link_status.summary.links_down}</div>
+                    <div className="issue-desc">链路处于 Down 状态</div>
+                    <button
+                      onClick={() => {
+                        const element = document.querySelector('.down-links-section')
+                        element?.scrollIntoView({ behavior: 'smooth' })
+                      }}
+                      className="view-details-btn"
+                    >
+                      查看详情
+                    </button>
+                  </div>
+                )}
+
+                {/* Hot Ports */}
+                {analysis.temperature?.hot_ports?.length > 0 && (
+                  <div className="issue-card critical">
+                    <div className="issue-header">
+                      <Thermometer size={18} />
+                      <span>高温告警</span>
+                    </div>
+                    <div className="issue-count">{analysis.temperature.hot_ports.length}</div>
+                    <div className="issue-desc">端口温度 &gt; 60°C</div>
+                    <button
+                      onClick={() => {
+                        const element = document.querySelector('.hot-ports-section')
+                        element?.scrollIntoView({ behavior: 'smooth' })
+                      }}
+                      className="view-details-btn"
+                    >
+                      查看详情
+                    </button>
+                  </div>
+                )}
+
+                {/* No Critical Issues */}
+                {!analysis.ber_analysis?.critical_ports?.length &&
+                 !analysis.link_status?.summary?.links_down &&
+                 !analysis.temperature?.hot_ports?.length && (
+                  <div className="no-issues">
+                    <CheckCircle size={24} color="#22c55e" />
+                    <span>未发现严重问题</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Warning Issues */}
+            <div className="issues-warning">
+              <h3 style={{ color: '#eab308', marginBottom: '16px' }}>
+                <AlertTriangle size={18} style={{ marginRight: '8px' }} />
+                警告问题 (Warning Issues)
+              </h3>
+              <div className="issue-cards">
+                {/* Warning BER Ports */}
+                {analysis.ber_analysis?.warning_ports?.length > 0 && (
+                  <div className="issue-card warning">
+                    <div className="issue-header">
+                      <TrendingUp size={18} />
+                      <span>BER 警告</span>
+                    </div>
+                    <div className="issue-count">{analysis.ber_analysis.warning_ports.length}</div>
+                    <div className="issue-desc">端口 BER &gt; 1e-9</div>
+                    <button
+                      onClick={() => {
+                        const element = document.querySelector('.warning-section')
+                        element?.scrollIntoView({ behavior: 'smooth' })
+                      }}
+                      className="view-details-btn"
+                    >
+                      查看详情
+                    </button>
+                  </div>
+                )}
+
+                {/* Error Recovery Events */}
+                {analysis.link_status?.summary?.error_recovery_events > 0 && (
+                  <div className="issue-card warning">
+                    <div className="issue-header">
+                      <Activity size={18} />
+                      <span>错误恢复事件</span>
+                    </div>
+                    <div className="issue-count">{analysis.link_status.summary.error_recovery_events}</div>
+                    <div className="issue-desc">链路错误恢复计数器 &gt; 0</div>
+                    <button
+                      onClick={() => {
+                        const element = document.querySelector('.link-summary')
+                        element?.scrollIntoView({ behavior: 'smooth' })
+                      }}
+                      className="view-details-btn"
+                    >
+                      查看详情
+                    </button>
+                  </div>
+                )}
+
+                {/* Congested Ports */}
+                {analysis.performance?.summary?.congested_ports > 0 && (
+                  <div className="issue-card warning">
+                    <div className="issue-header">
+                      <Zap size={18} />
+                      <span>网络拥塞</span>
+                    </div>
+                    <div className="issue-count">{analysis.performance.summary.congested_ports}</div>
+                    <div className="issue-desc">端口发送等待时间过高</div>
+                    <button
+                      onClick={() => {
+                        const element = document.querySelector('.congestion-section')
+                        element?.scrollIntoView({ behavior: 'smooth' })
+                      }}
+                      className="view-details-btn"
+                    >
+                      查看详情
+                    </button>
+                  </div>
+                )}
+
+                {/* Port Errors */}
+                {analysis.port_errors?.error_ports?.length > 0 && (
+                  <div className="issue-card warning">
+                    <div className="issue-header">
+                      <AlertTriangle size={18} />
+                      <span>端口错误</span>
+                    </div>
+                    <div className="issue-count">{analysis.port_errors.error_ports.length}</div>
+                    <div className="issue-desc">多种错误类型</div>
+                    <button
+                      onClick={() => {
+                        const element = document.querySelector('.error-ports-section')
+                        element?.scrollIntoView({ behavior: 'smooth' })
+                      }}
+                      className="view-details-btn"
+                    >
+                      查看详情
+                    </button>
+                  </div>
+                )}
+
+                {/* No Warning Issues */}
+                {!analysis.ber_analysis?.warning_ports?.length &&
+                 !analysis.link_status?.summary?.error_recovery_events &&
+                 !analysis.performance?.summary?.congested_ports &&
+                 !analysis.port_errors?.error_ports?.length && (
+                  <div className="no-issues">
+                    <CheckCircle size={24} color="#22c55e" />
+                    <span>未发现警告问题</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Health Score Dashboard */}
+      {analysis.health_score && (
+        <div className="analysis-section health-dashboard">
+          <div className="section-header" onClick={() => toggleSection('health')}>
+            <h2 className="section-title">
+              <Award size={20} />
+              Network Health Score
+            </h2>
+            {expandedSections.health ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+          </div>
+
+          {expandedSections.health && (
+            <div className="section-content">
+              <div className="health-overview">
+                <div className="health-score-card">
+                  <div className="score-circle" style={{ borderColor: getHealthColor(analysis.health_score.overall_score) }}>
+                    <div className="score-value" style={{ color: getHealthColor(analysis.health_score.overall_score) }}>
+                      {analysis.health_score.overall_score}
+                    </div>
+                    <div className="score-label">Overall Score</div>
+                  </div>
+                  <div className="score-details">
+                    <div className="score-grade" style={{ color: getHealthColor(analysis.health_score.overall_score) }}>
+                      Grade: {analysis.health_score.grade}
+                    </div>
+                    <div className="score-status">{analysis.health_score.status}</div>
+                  </div>
+                </div>
+
+                <div className="health-breakdown">
+                  {Object.entries(analysis.health_score.scores).map(([key, value]) => (
+                    <div key={key} className="health-metric">
+                      <div className="metric-header">
+                        <span className="metric-name">{key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</span>
+                        <span className="metric-score" style={{ color: getHealthColor(value) }}>{value.toFixed(1)}</span>
+                      </div>
+                      <div className="metric-bar">
+                        <div
+                          className="metric-bar-fill"
+                          style={{
+                            width: `${value}%`,
+                            backgroundColor: getHealthColor(value)
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Overview Section */}
+      <div className="analysis-section">
+        <div className="section-header" onClick={() => toggleSection('overview')}>
+          <h2 className="section-title">
+            <Activity size={20} />
+            UFM Network Overview
+          </h2>
+          {expandedSections.overview ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+        </div>
+
+        {expandedSections.overview && (
+          <div className="section-content">
+            <div className="stats-grid">
+              <div className="stat-card">
+                <div className="stat-icon" style={{ backgroundColor: '#3b82f620' }}>
+                  <Activity size={24} color="#3b82f6" />
+                </div>
+                <div className="stat-info">
+                  <div className="stat-label">Total Ports</div>
+                  <div className="stat-value">{load_info?.rows?.toLocaleString() || 0}</div>
+                </div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-icon" style={{ backgroundColor: '#8b5cf620' }}>
+                  <BarChart3 size={24} color="#8b5cf6" />
+                </div>
+                <div className="stat-info">
+                  <div className="stat-label">Unique Nodes</div>
+                  <div className="stat-value">{load_info?.unique_nodes?.toLocaleString() || 0}</div>
+                </div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-icon" style={{ backgroundColor: '#10b98120' }}>
+                  <Zap size={24} color="#10b981" />
+                </div>
+                <div className="stat-info">
+                  <div className="stat-label">Unique Hosts</div>
+                  <div className="stat-value">{load_info?.unique_hosts?.toLocaleString() || 0}</div>
+                </div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-icon" style={{ backgroundColor: '#f59e0b20' }}>
+                  <Cable size={24} color="#f59e0b" />
+                </div>
+                <div className="stat-info">
+                  <div className="stat-label">Data Fields</div>
+                  <div className="stat-value">{load_info?.columns || 0}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* BER Analysis Section */}
+      {analysis.ber_analysis && (
+        <div className="analysis-section">
+          <h2 className="section-title">
+            <TrendingUp size={20} />
+            Bit Error Rate (BER) Analysis
+          </h2>
+
+          <div className="ber-summary">
+            {Object.entries(analysis.ber_analysis.summary).map(([key, value]) => (
+              <div key={key} className="ber-metric">
+                <h3>{key}</h3>
+                <div className="metric-stats">
+                  <div className="metric-item">
+                    <span className="metric-label">Ports with Errors:</span>
+                    <span className="metric-value">{value.ports_with_errors}</span>
+                  </div>
+                  <div className="metric-item">
+                    <span className="metric-label">Max BER:</span>
+                    <span className="metric-value">{formatBER(value.max_value)}</span>
+                  </div>
+                  <div className="metric-item">
+                    <span className="metric-label">Avg BER:</span>
+                    <span className="metric-value">{formatBER(value.avg_value)}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Critical Ports */}
+          {analysis.ber_analysis.critical_ports?.length > 0 && (
+            <div className="critical-section">
+              <div
+                className="subsection-header"
+                onClick={() => toggleSection('berCritical')}
+                style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}
+              >
+                <h3 style={{ color: '#ef4444', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                  <XCircle size={18} />
+                  严重 BER 错误端口 ({analysis.ber_analysis.critical_ports.length} 个)
+                </h3>
+                {expandedSections.berCritical ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+              </div>
+
+              {expandedSections.berCritical && (
+                <DataTable
+                  data={analysis.ber_analysis.critical_ports}
+                  title="Critical BER Ports"
+                />
+              )}
+            </div>
+          )}
+
+          {/* Warning Ports */}
+          {analysis.ber_analysis.warning_ports?.length > 0 && (
+            <div className="warning-section">
+              <div
+                className="subsection-header"
+                onClick={() => toggleSection('berWarning')}
+                style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}
+              >
+                <h3 style={{ color: '#eab308', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                  <AlertTriangle size={18} />
+                  BER 警告端口 ({analysis.ber_analysis.warning_ports.length} 个)
+                </h3>
+                {expandedSections.berWarning ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+              </div>
+
+              {expandedSections.berWarning && (
+                <DataTable
+                  data={analysis.ber_analysis.warning_ports}
+                  title="Warning BER Ports"
+                />
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Link Status Section */}
+      {analysis.link_status && (
+        <div className="analysis-section">
+          <h2 className="section-title">
+            <Activity size={20} />
+            Link Status
+          </h2>
+
+          <div className="link-summary">
+            {analysis.link_status.summary.links_down > 0 && (
+              <div className="alert-box" style={{ borderLeftColor: '#ef4444' }}>
+                <XCircle size={20} color="#ef4444" />
+                <div>
+                  <strong>{analysis.link_status.summary.links_down} Links Down</strong>
+                  <p>Network connectivity issues detected</p>
+                </div>
+              </div>
+            )}
+
+            {analysis.link_status.summary.error_recovery_events > 0 && (
+              <div className="alert-box" style={{ borderLeftColor: '#eab308' }}>
+                <AlertTriangle size={20} color="#eab308" />
+                <div>
+                  <strong>{analysis.link_status.summary.error_recovery_events} Error Recovery Events</strong>
+                  <p>Links experienced recovery events</p>
+                </div>
+              </div>
+            )}
+
+            {analysis.link_status.summary.links_down === 0 &&
+             analysis.link_status.summary.error_recovery_events === 0 && (
+              <div className="alert-box" style={{ borderLeftColor: '#22c55e' }}>
+                <CheckCircle size={20} color="#22c55e" />
+                <div>
+                  <strong>All Links Operational</strong>
+                  <p>No link issues detected</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Down Links Table */}
+          {analysis.link_status.down_links?.length > 0 && (
+            <div className="down-links-section">
+              <div
+                className="subsection-header"
+                onClick={() => toggleSection('linkDown')}
+                style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}
+              >
+                <h3 style={{ color: '#ef4444', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                  <XCircle size={18} />
+                  中断链路 ({analysis.link_status.down_links.length} 个)
+                </h3>
+                {expandedSections.linkDown ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+              </div>
+
+              {expandedSections.linkDown && (
+                <DataTable
+                  data={analysis.link_status.down_links}
+                  title="Down Links"
+                />
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Temperature Section */}
+      {analysis.temperature && analysis.temperature.summary && (
+        <div className="analysis-section">
+          <h2 className="section-title">
+            <Thermometer size={20} />
+            Temperature Monitoring
+          </h2>
+
+          <div className="temp-summary">
+            <div className="temp-stat">
+              <span className="temp-label">Average Temperature</span>
+              <span className="temp-value">{analysis.temperature.summary.avg_temp?.toFixed(1)}°C</span>
+            </div>
+            <div className="temp-stat">
+              <span className="temp-label">Maximum Temperature</span>
+              <span className="temp-value" style={{ color: analysis.temperature.summary.max_temp > 60 ? '#ef4444' : '#22c55e' }}>
+                {analysis.temperature.summary.max_temp?.toFixed(1)}°C
+              </span>
+            </div>
+            <div className="temp-stat">
+              <span className="temp-label">Minimum Temperature</span>
+              <span className="temp-value">{analysis.temperature.summary.min_temp?.toFixed(1)}°C</span>
+            </div>
+            <div className="temp-stat">
+              <span className="temp-label">Ports Monitored</span>
+              <span className="temp-value">{analysis.temperature.summary.ports_monitored?.toLocaleString()}</span>
+            </div>
+          </div>
+
+          {/* Hot Ports */}
+          {analysis.temperature.hot_ports?.length > 0 && (
+            <div className="hot-ports-section">
+              <div
+                className="subsection-header"
+                onClick={() => toggleSection('tempHot')}
+                style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}
+              >
+                <h3 style={{ color: '#ef4444', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                  <Thermometer size={18} />
+                  高温端口详情 ({analysis.temperature.hot_ports.length} 个端口)
+                </h3>
+                {expandedSections.tempHot ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+              </div>
+
+              {expandedSections.tempHot && (
+                <DataTable
+                  data={analysis.temperature.hot_ports}
+                  title="Hot Ports"
+                />
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Cable Information Section */}
+      {analysis.cables && (
+        <div className="analysis-section">
+          <h2 className="section-title">
+            <Cable size={20} />
+            Cable Information
+          </h2>
+
+          <div className="cable-summary">
+            {analysis.cables.summary?.cables_identified && (
+              <div className="cable-stat">
+                <span className="cable-label">Cables Identified</span>
+                <span className="cable-value">{analysis.cables.summary.cables_identified.toLocaleString()}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Cable Types */}
+          {analysis.cables.cable_types?.length > 0 && (
+            <div className="cable-types">
+              <h3>Cable Types Distribution</h3>
+              <div className="cable-type-list">
+                {analysis.cables.cable_types.map((item, idx) => (
+                  <div key={idx} className="cable-type-item">
+                    <span className="cable-type-name">{item.type || 'Unknown'}</span>
+                    <span className="cable-type-count">{item.count.toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Cable Lengths */}
+          {analysis.cables.cable_lengths?.length > 0 && (
+            <div className="cable-lengths">
+              <h3>Cable Lengths Distribution</h3>
+              <div className="cable-length-list">
+                {analysis.cables.cable_lengths.map((item, idx) => (
+                  <div key={idx} className="cable-length-item">
+                    <span className="cable-length-name">{item.length || 'Unknown'}</span>
+                    <span className="cable-length-count">{item.count.toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Port Errors Section */}
+      {analysis.port_errors && (
+        <div className="analysis-section">
+          <h2 className="section-title">
+            <AlertTriangle size={20} />
+            Port Error Counters
+          </h2>
+
+          <div className="error-summary">
+            {Object.entries(analysis.port_errors.summary).map(([key, value]) => (
+              <div key={key} className="error-metric">
+                <h3>{key}</h3>
+                <div className="error-stats">
+                  <div className="error-stat-item">
+                    <span className="error-label">Ports with Errors:</span>
+                    <span className="error-value">{value.ports_with_errors}</span>
+                  </div>
+                  <div className="error-stat-item">
+                    <span className="error-label">Total Errors:</span>
+                    <span className="error-value">{value.total_errors.toLocaleString()}</span>
+                  </div>
+                  <div className="error-stat-item">
+                    <span className="error-label">Max Errors:</span>
+                    <span className="error-value">{value.max_errors.toLocaleString()}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Error Ports Table */}
+          {analysis.port_errors.error_ports?.length > 0 && (
+            <div className="error-ports-section">
+              <div
+                className="subsection-header"
+                onClick={() => toggleSection('errorPorts')}
+                style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}
+              >
+                <h3 style={{ color: '#eab308', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                  <AlertTriangle size={18} />
+                  错误端口 ({analysis.port_errors.error_ports.length} 个)
+                </h3>
+                {expandedSections.errorPorts ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+              </div>
+
+              {expandedSections.errorPorts && (
+                <DataTable
+                  data={analysis.port_errors.error_ports}
+                  title="Error Ports"
+                />
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Performance Analysis Section */}
+      {analysis.performance && (
+        <div className="analysis-section">
+          <h2 className="section-title">
+            <Zap size={20} />
+            Performance Analysis
+          </h2>
+
+          {/* Traffic Statistics */}
+          {analysis.performance.traffic_stats && Object.keys(analysis.performance.traffic_stats).length > 0 && (
+            <div className="traffic-stats-section">
+              <h3>Traffic Statistics</h3>
+              <div className="traffic-grid">
+                {Object.entries(analysis.performance.traffic_stats).map(([key, stats]) => (
+                  <div key={key} className="traffic-card">
+                    <h4>{key}</h4>
+                    <div className="traffic-metrics">
+                      <div className="traffic-metric">
+                        <span className="metric-label">Total:</span>
+                        <span className="metric-value">{formatNumber(stats.total)}</span>
+                      </div>
+                      <div className="traffic-metric">
+                        <span className="metric-label">Average:</span>
+                        <span className="metric-value">{formatNumber(stats.average)}</span>
+                      </div>
+                      <div className="traffic-metric">
+                        <span className="metric-label">Max:</span>
+                        <span className="metric-value">{formatNumber(stats.max)}</span>
+                      </div>
+                      <div className="traffic-metric">
+                        <span className="metric-label">P95:</span>
+                        <span className="metric-value">{formatNumber(stats.p95)}</span>
+                      </div>
+                      <div className="traffic-metric">
+                        <span className="metric-label">P99:</span>
+                        <span className="metric-value">{formatNumber(stats.p99)}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Top Bandwidth Ports */}
+          {analysis.performance.top_bandwidth_ports?.length > 0 && (
+            <div className="bandwidth-section">
+              <h3 style={{ color: '#3b82f6' }}>Top Bandwidth Ports ({analysis.performance.top_bandwidth_ports.length})</h3>
+              <DataTable
+                data={analysis.performance.top_bandwidth_ports}
+                title="Top Bandwidth Ports"
+              />
+            </div>
+          )}
+
+          {/* Congestion Ports */}
+          {analysis.performance.congestion_ports?.length > 0 && (
+            <div className="congestion-section">
+              <div
+                className="subsection-header"
+                onClick={() => toggleSection('perfCongestion')}
+                style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}
+              >
+                <h3 style={{ color: '#f97316', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                  <AlertTriangle size={18} />
+                  拥塞端口 ({analysis.performance.congestion_ports.length} 个)
+                </h3>
+                {expandedSections.perfCongestion ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+              </div>
+
+              {expandedSections.perfCongestion && (
+                <DataTable
+                  data={analysis.performance.congestion_ports}
+                  title="Congested Ports"
+                />
+              )}
+            </div>
+          )}
+
+          {/* Congestion Summary */}
+          {analysis.performance.summary?.congested_ports > 0 && (
+            <div className="alert-box" style={{ borderLeftColor: '#f97316', marginTop: '20px' }}>
+              <AlertTriangle size={20} color="#f97316" />
+              <div>
+                <strong>Network Congestion Detected</strong>
+                <p>{analysis.performance.summary.congested_ports} ports experiencing congestion</p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Port Distribution Section */}
+      {analysis.port_distribution && (
+        <div className="analysis-section">
+          <h2 className="section-title">
+            <BarChart3 size={20} />
+            Port Distribution Analysis
+          </h2>
+
+          {/* Speed Distribution */}
+          {analysis.port_distribution.speed_distribution?.length > 0 && (
+            <div className="distribution-section">
+              <h3>Port Speed Distribution</h3>
+              <div className="distribution-list">
+                {analysis.port_distribution.speed_distribution.map((item, idx) => (
+                  <div key={idx} className="distribution-item">
+                    <div className="distribution-left">
+                      <span className="distribution-name">{item.speed}</span>
+                      <div className="distribution-bar">
+                        <div
+                          className="distribution-bar-fill"
+                          style={{ width: `${item.percentage}%`, backgroundColor: '#3b82f6' }}
+                        />
+                      </div>
+                    </div>
+                    <div className="distribution-right">
+                      <span className="distribution-count">{item.count.toLocaleString()}</span>
+                      <span className="distribution-percentage">({item.percentage}%)</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Width Distribution */}
+          {analysis.port_distribution.width_distribution?.length > 0 && (
+            <div className="distribution-section">
+              <h3>Port Width Distribution</h3>
+              <div className="distribution-list">
+                {analysis.port_distribution.width_distribution.map((item, idx) => (
+                  <div key={idx} className="distribution-item">
+                    <div className="distribution-left">
+                      <span className="distribution-name">{item.width}</span>
+                      <div className="distribution-bar">
+                        <div
+                          className="distribution-bar-fill"
+                          style={{ width: `${item.percentage}%`, backgroundColor: '#10b981' }}
+                        />
+                      </div>
+                    </div>
+                    <div className="distribution-right">
+                      <span className="distribution-count">{item.count.toLocaleString()}</span>
+                      <span className="distribution-percentage">({item.percentage}%)</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* State Distribution */}
+          {analysis.port_distribution.state_distribution?.length > 0 && (
+            <div className="distribution-section">
+              <h3>Port State Distribution</h3>
+              <div className="distribution-list">
+                {analysis.port_distribution.state_distribution.map((item, idx) => (
+                  <div key={idx} className="distribution-item">
+                    <div className="distribution-left">
+                      <span className="distribution-name">{item.state}</span>
+                      <div className="distribution-bar">
+                        <div
+                          className="distribution-bar-fill"
+                          style={{ width: `${item.percentage}%`, backgroundColor: '#8b5cf6' }}
+                        />
+                      </div>
+                    </div>
+                    <div className="distribution-right">
+                      <span className="distribution-count">{item.count.toLocaleString()}</span>
+                      <span className="distribution-percentage">({item.percentage}%)</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      <style jsx>{`
+        .ufm-analysis {
+          padding: 20px;
+          max-width: 1600px;
+          margin: 0 auto;
+        }
+
+        .analysis-header {
+          background: #1e293b;
+          border-radius: 12px;
+          padding: 24px;
+          margin-bottom: 24px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .header-left h1.main-title {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          font-size: 2rem;
+          margin: 0 0 8px 0;
+          color: #f1f5f9;
+        }
+
+        .subtitle {
+          color: #94a3b8;
+          margin: 0;
+          font-size: 1rem;
+        }
+
+        .export-button {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 12px 20px;
+          background: #3b82f6;
+          color: white;
+          border: none;
+          border-radius: 8px;
+          cursor: pointer;
+          font-size: 0.95rem;
+          font-weight: 500;
+          transition: all 0.2s;
+        }
+
+        .export-button:hover {
+          background: #2563eb;
+          transform: translateY(-1px);
+          box-shadow: 0 4px 8px rgba(59, 130, 246, 0.3);
+        }
+
+        .analysis-section {
+          background: #1e293b;
+          border-radius: 12px;
+          padding: 24px;
+          margin-bottom: 20px;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .health-dashboard {
+          background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+          border: 1px solid #334155;
+        }
+
+        .section-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          cursor: pointer;
+          margin-bottom: 20px;
+          padding-bottom: 12px;
+          border-bottom: 2px solid #334155;
+        }
+
+        .section-header:hover {
+          opacity: 0.8;
+        }
+
+        .section-title {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          font-size: 1.5rem;
+          margin: 0;
+          color: #f1f5f9;
+        }
+
+        .section-content {
+          animation: slideDown 0.3s ease-out;
+        }
+
+        @keyframes slideDown {
+          from {
+            opacity: 0;
+            transform: translateY(-10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        .health-overview {
+          display: grid;
+          grid-template-columns: auto 1fr;
+          gap: 32px;
+          align-items: start;
+        }
+
+        .health-score-card {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 16px;
+        }
+
+        .score-circle {
+          width: 180px;
+          height: 180px;
+          border-radius: 50%;
+          border: 8px solid;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          background: #0f172a;
+          box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+        }
+
+        .score-value {
+          font-size: 3.5rem;
+          font-weight: bold;
+          line-height: 1;
+        }
+
+        .score-label {
+          font-size: 0.875rem;
+          color: #94a3b8;
+          margin-top: 4px;
+        }
+
+        .score-details {
+          text-align: center;
+        }
+
+        .score-grade {
+          font-size: 1.5rem;
+          font-weight: 600;
+          margin-bottom: 4px;
+        }
+
+        .score-status {
+          color: #94a3b8;
+          font-size: 0.95rem;
+        }
+
+        .health-breakdown {
+          display: grid;
+          gap: 16px;
+        }
+
+        .health-metric {
+          background: #0f172a;
+          padding: 16px;
+          border-radius: 8px;
+        }
+
+        .metric-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 8px;
+        }
+
+        .metric-name {
+          color: #f1f5f9;
+          font-weight: 500;
+        }
+
+        .metric-score {
+          font-size: 1.25rem;
+          font-weight: 600;
+        }
+
+        .metric-bar {
+          height: 8px;
+          background: #1e293b;
+          border-radius: 4px;
+          overflow: hidden;
+        }
+
+        .metric-bar-fill {
+          height: 100%;
+          border-radius: 4px;
+          transition: width 0.5s ease;
+        }
+
+        .stats-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+          gap: 16px;
+        }
+
+        .stat-card {
+          background: #0f172a;
+          padding: 20px;
+          border-radius: 10px;
+          display: flex;
+          align-items: center;
+          gap: 16px;
+          transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .stat-card:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+
+        .stat-icon {
+          width: 56px;
+          height: 56px;
+          border-radius: 12px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+
+        .stat-info {
+          flex: 1;
+        }
+
+        .stat-label {
+          font-size: 0.875rem;
+          color: #94a3b8;
+          margin-bottom: 6px;
+        }
+
+        .stat-value {
+          font-size: 2rem;
+          font-weight: bold;
+          color: #f1f5f9;
+        }
+
+        .ber-summary, .error-summary {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+          gap: 16px;
+          margin-bottom: 24px;
+        }
+
+        .ber-metric, .error-metric {
+          background: #0f172a;
+          padding: 20px;
+          border-radius: 10px;
+          border-left: 4px solid #3b82f6;
+          transition: transform 0.2s;
+        }
+
+        .ber-metric:hover, .error-metric:hover {
+          transform: translateX(4px);
+        }
+
+        .ber-metric h3, .error-metric h3 {
+          color: #3b82f6;
+          margin: 0 0 16px 0;
+          font-size: 1.1rem;
+        }
+
+        .metric-stats, .error-stats {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        .metric-item, .error-stat-item {
+          display: flex;
+          justify-content: space-between;
+          font-size: 0.9rem;
+          padding: 8px 0;
+          border-bottom: 1px solid #1e293b;
+        }
+
+        .metric-item:last-child, .error-stat-item:last-child {
+          border-bottom: none;
+        }
+
+        .metric-label, .error-label {
+          color: #94a3b8;
+        }
+
+        .metric-value, .error-value {
+          color: #f1f5f9;
+          font-weight: 600;
+        }
+
+        .alert-box {
+          display: flex;
+          align-items: flex-start;
+          gap: 14px;
+          padding: 18px;
+          background: #0f172a;
+          border-radius: 10px;
+          border-left: 4px solid;
+          margin-bottom: 16px;
+          transition: transform 0.2s;
+        }
+
+        .alert-box:hover {
+          transform: translateX(4px);
+        }
+
+        .alert-box strong {
+          display: block;
+          margin-bottom: 6px;
+          color: #f1f5f9;
+          font-size: 1.05rem;
+        }
+
+        .alert-box p {
+          margin: 0;
+          color: #94a3b8;
+          font-size: 0.9rem;
+        }
+
+        .temp-summary {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+          gap: 16px;
+          margin-bottom: 24px;
+        }
+
+        .temp-stat {
+          background: #0f172a;
+          padding: 20px;
+          border-radius: 10px;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+          transition: transform 0.2s;
+        }
+
+        .temp-stat:hover {
+          transform: translateY(-2px);
+        }
+
+        .temp-label {
+          font-size: 0.875rem;
+          color: #94a3b8;
+        }
+
+        .temp-value {
+          font-size: 1.75rem;
+          font-weight: bold;
+          color: #f1f5f9;
+        }
+
+        .cable-summary {
+          margin-bottom: 24px;
+        }
+
+        .cable-stat {
+          background: #0f172a;
+          padding: 20px;
+          border-radius: 10px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        .cable-label {
+          color: #94a3b8;
+          font-size: 1rem;
+        }
+
+        .cable-value {
+          font-size: 1.75rem;
+          font-weight: bold;
+          color: #f1f5f9;
+        }
+
+        .cable-types, .cable-lengths {
+          margin-top: 24px;
+        }
+
+        .cable-types h3, .cable-lengths h3 {
+          color: #f1f5f9;
+          margin-bottom: 16px;
+          font-size: 1.2rem;
+        }
+
+        .cable-type-list, .cable-length-list {
+          display: grid;
+          gap: 12px;
+        }
+
+        .cable-type-item, .cable-length-item {
+          background: #0f172a;
+          padding: 14px 18px;
+          border-radius: 8px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          transition: all 0.2s;
+        }
+
+        .cable-type-item:hover, .cable-length-item:hover {
+          background: #1e293b;
+          transform: translateX(4px);
+        }
+
+        .cable-type-name, .cable-length-name {
+          color: #f1f5f9;
+          font-weight: 500;
+        }
+
+        .cable-type-count, .cable-length-count {
+          color: #3b82f6;
+          font-weight: 700;
+          font-size: 1.1rem;
+        }
+
+        .critical-section, .warning-section, .down-links-section,
+        .hot-ports-section, .error-ports-section {
+          margin-top: 24px;
+        }
+
+        .critical-section h3, .warning-section h3, .down-links-section h3,
+        .hot-ports-section h3, .error-ports-section h3 {
+          margin-bottom: 16px;
+          font-size: 1.15rem;
+        }
+
+        .no-data {
+          padding: 60px 20px;
+          text-align: center;
+          color: #94a3b8;
+          font-size: 1.2rem;
+          background: #1e293b;
+          border-radius: 12px;
+        }
+
+        /* Performance Analysis Styles */
+        .traffic-stats-section {
+          margin-bottom: 24px;
+        }
+
+        .traffic-stats-section h3 {
+          color: #f1f5f9;
+          margin-bottom: 16px;
+          font-size: 1.2rem;
+        }
+
+        .traffic-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+          gap: 16px;
+        }
+
+        .traffic-card {
+          background: #0f172a;
+          padding: 20px;
+          border-radius: 10px;
+          border-left: 4px solid #3b82f6;
+        }
+
+        .traffic-card h4 {
+          color: #3b82f6;
+          margin: 0 0 16px 0;
+          font-size: 1.1rem;
+        }
+
+        .traffic-metrics {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        .traffic-metric {
+          display: flex;
+          justify-content: space-between;
+          padding: 8px 0;
+          border-bottom: 1px solid #1e293b;
+        }
+
+        .traffic-metric:last-child {
+          border-bottom: none;
+        }
+
+        .bandwidth-section, .congestion-section {
+          margin-top: 24px;
+        }
+
+        .bandwidth-section h3, .congestion-section h3 {
+          margin-bottom: 16px;
+          font-size: 1.15rem;
+        }
+
+        /* Port Distribution Styles */
+        .distribution-section {
+          margin-bottom: 32px;
+        }
+
+        .distribution-section:last-child {
+          margin-bottom: 0;
+        }
+
+        .distribution-section h3 {
+          color: #f1f5f9;
+          margin-bottom: 16px;
+          font-size: 1.2rem;
+        }
+
+        .distribution-list {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+
+        .distribution-item {
+          background: #0f172a;
+          padding: 16px;
+          border-radius: 8px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 16px;
+          transition: all 0.2s;
+        }
+
+        .distribution-item:hover {
+          background: #1e293b;
+          transform: translateX(4px);
+        }
+
+        .distribution-left {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .distribution-name {
+          color: #f1f5f9;
+          font-weight: 500;
+          font-size: 1rem;
+        }
+
+        .distribution-bar {
+          height: 8px;
+          background: #1e293b;
+          border-radius: 4px;
+          overflow: hidden;
+          width: 100%;
+        }
+
+        .distribution-bar-fill {
+          height: 100%;
+          border-radius: 4px;
+          transition: width 0.5s ease;
+        }
+
+        .distribution-right {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-shrink: 0;
+        }
+
+        .distribution-count {
+          color: #f1f5f9;
+          font-weight: 700;
+          font-size: 1.2rem;
+        }
+
+        .distribution-percentage {
+          color: #94a3b8;
+          font-size: 0.9rem;
+        }
+
+        /* Issues Summary Styles */
+        .issues-summary {
+          background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+          border: 2px solid #ef4444;
+        }
+
+        .issues-critical, .issues-warning {
+          margin-bottom: 32px;
+        }
+
+        .issues-critical:last-child, .issues-warning:last-child {
+          margin-bottom: 0;
+        }
+
+        .issue-cards {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+          gap: 16px;
+        }
+
+        .issue-card {
+          background: #0f172a;
+          padding: 20px;
+          border-radius: 10px;
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          transition: all 0.2s;
+          border-left: 4px solid;
+        }
+
+        .issue-card.critical {
+          border-left-color: #ef4444;
+        }
+
+        .issue-card.warning {
+          border-left-color: #eab308;
+        }
+
+        .issue-card:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+        }
+
+        .issue-header {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          color: #f1f5f9;
+          font-weight: 600;
+          font-size: 1rem;
+        }
+
+        .issue-count {
+          font-size: 2.5rem;
+          font-weight: bold;
+          color: #f1f5f9;
+          line-height: 1;
+        }
+
+        .issue-card.critical .issue-count {
+          color: #ef4444;
+        }
+
+        .issue-card.warning .issue-count {
+          color: #eab308;
+        }
+
+        .issue-desc {
+          color: #94a3b8;
+          font-size: 0.875rem;
+        }
+
+        .view-details-btn {
+          margin-top: 8px;
+          padding: 8px 16px;
+          background: #334155;
+          color: #f1f5f9;
+          border: none;
+          border-radius: 6px;
+          cursor: pointer;
+          font-size: 0.875rem;
+          font-weight: 500;
+          transition: all 0.2s;
+        }
+
+        .view-details-btn:hover {
+          background: #475569;
+          transform: translateX(2px);
+        }
+
+        .no-issues {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 24px;
+          background: #0f172a;
+          border-radius: 10px;
+          color: #22c55e;
+          font-size: 1.1rem;
+          font-weight: 500;
+        }
+
+        /* Port Detail Card Styles */
+        .port-detail-list {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+          gap: 16px;
+          margin-bottom: 16px;
+        }
+
+        .port-detail-card {
+          background: #0f172a;
+          border: 1px solid #334155;
+          border-radius: 10px;
+          padding: 16px;
+          transition: all 0.2s;
+        }
+
+        .port-detail-card:hover {
+          border-color: #475569;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+          transform: translateY(-2px);
+        }
+
+        .port-detail-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding-bottom: 12px;
+          margin-bottom: 12px;
+          border-bottom: 1px solid #334155;
+        }
+
+        .port-id {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex: 1;
+        }
+
+        .port-label {
+          color: #94a3b8;
+          font-size: 0.875rem;
+          font-weight: 500;
+        }
+
+        .port-value {
+          color: #f1f5f9;
+          font-weight: 600;
+          font-size: 0.95rem;
+          font-family: 'Courier New', monospace;
+        }
+
+        .port-temp {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-weight: 600;
+          font-size: 0.95rem;
+          padding: 6px 12px;
+          background: rgba(255, 255, 255, 0.05);
+          border-radius: 6px;
+        }
+
+        .port-detail-body {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .port-info-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 6px 0;
+          font-size: 0.9rem;
+        }
+
+        .info-label {
+          color: #94a3b8;
+          font-weight: 500;
+        }
+
+        .info-value {
+          color: #f1f5f9;
+          font-weight: 500;
+          text-align: right;
+        }
+
+        @media (max-width: 768px) {
+          .health-overview {
+            grid-template-columns: 1fr;
+          }
+
+          .stats-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .analysis-header {
+            flex-direction: column;
+            gap: 16px;
+            align-items: flex-start;
+          }
+
+          .traffic-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .distribution-item {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+
+          .distribution-right {
+            width: 100%;
+            justify-content: space-between;
+          }
+        }
+      `}</style>
+    </div>
+  )
+}
+
+export default UFMAnalysis

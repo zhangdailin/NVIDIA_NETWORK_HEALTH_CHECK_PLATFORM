@@ -5,7 +5,7 @@ import { toNumber, ensureArray } from './analysisUtils'
 /**
  * Mellanox计数器分析页面
  */
-function MlnxCountersAnalysis({ mlnxCountersData, summary }) {
+function MlnxCountersAnalysis({ mlnxCountersData, summary, totalRows }) {
   const rows = ensureArray(mlnxCountersData)
 
   // 定义严重度判断逻辑
@@ -114,6 +114,7 @@ function MlnxCountersAnalysis({ mlnxCountersData, summary }) {
       emptyHint="请确认采集的数据包中包含Mellanox计数器信息。"
       data={mlnxCountersData}
       summary={summary}
+      totalRows={totalRows ?? summary?.total_ports_analyzed ?? summary?.total_ports_with_activity ?? mlnxCountersData?.length}
       getSeverity={getSeverity}
       getIssueReason={getIssueReason}
       previewColumns={previewColumns}

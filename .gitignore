@@ -41,6 +41,8 @@ uploads/*
 !uploads/.gitkeep
 results/*
 !results/.gitkeep
+backend/results/*.json
+**/ufm_analysis_result.json
 
 # Python virtual environment
 venv/

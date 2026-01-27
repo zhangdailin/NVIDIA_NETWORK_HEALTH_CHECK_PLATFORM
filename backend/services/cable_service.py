@@ -17,12 +17,30 @@ from .anomalies import AnomlyType, IBH_ANOMALY_TBL_KEY
 from .dataset_inventory import DatasetInventory
 from .topology_lookup import TopologyLookup
 
+# 导入配置管理器
+try:
+    from config.thresholds import threshold_config
+except ImportError:
+    threshold_config = None
+
 logger = logging.getLogger(__name__)
 
 
 CABLE_TABLE = "CABLE_INFO"
-TEMP_WARNING_THRESHOLD = 70
-TEMP_CRITICAL_THRESHOLD = 80
+
+# 从配置加载温度阈值
+def _get_temp_thresholds():
+    if threshold_config:
+        return {
+            'warning': threshold_config.get('cable.temperature.warning', 70),
+            'critical': threshold_config.get('cable.temperature.critical', 80)
+        }
+    return {'warning': 70, 'critical': 80}
+
+TEMP_THRESHOLDS = _get_temp_thresholds()
+TEMP_WARNING_THRESHOLD = TEMP_THRESHOLDS['warning']
+TEMP_CRITICAL_THRESHOLD = TEMP_THRESHOLDS['critical']
+
 LENGTH_BUCKETS = ["0-1m", "1-3m", "3-5m", "5-10m", "10-30m", "30-100m", ">100m", "Unknown"]
 SPEED_PRIORITY = [
     (0x800, ("HDR/NDR", 7)),
@@ -84,7 +102,13 @@ DISPLAY_COLUMNS = [
     "Severity",  # Add Severity field for frontend
 ]
 
-MAX_CABLE_ROWS = 2000
+# 从配置加载最大行数
+def _get_max_cable_rows():
+    if threshold_config:
+        return threshold_config.get('cable.max_display_rows', 2000)
+    return 2000
+
+MAX_CABLE_ROWS = _get_max_cable_rows()
 
 
 class CableService:
@@ -346,7 +370,14 @@ class CableService:
         length_cu = row.get("LengthCopperOrActive")
 
         if "fiber" in type_desc:
-            limit_map = {"hdr": 1000, "fdr": 2000}
+            # 从配置加载光纤长度限制
+            if threshold_config:
+                limit_map = {
+                    "hdr": threshold_config.get("cable.length_limits.fiber.hdr", 1000),
+                    "fdr": threshold_config.get("cable.length_limits.fiber.fdr", 2000)
+                }
+            else:
+                limit_map = {"hdr": 1000, "fdr": 2000}
             for keyword, limit in limit_map.items():
                 if keyword in supported_speed and pd.notna(length_sm) and float(length_sm) > limit:
                     return f"SMF length exceeds {limit}m"
@@ -470,8 +501,9 @@ class CableService:
         """Vectorized severity calculation for better performance."""
         import numpy as np
 
-        TEMP_WARNING_THRESHOLD = 70
-        TEMP_CRITICAL_THRESHOLD = 80
+        # 使用配置的温度阈值
+        TEMP_WARNING_THRESHOLD = TEMP_THRESHOLDS['warning']
+        TEMP_CRITICAL_THRESHOLD = TEMP_THRESHOLDS['critical']
 
         # Start with all normal
         severity = pd.Series("normal", index=df.index)
@@ -586,8 +618,9 @@ class CableService:
         """Calculate severity based on temperature and alarms.
         Returns: 'critical', 'warning', or 'normal'
         """
-        TEMP_WARNING_THRESHOLD = 70
-        TEMP_CRITICAL_THRESHOLD = 80
+        # 使用配置的温度阈值
+        TEMP_WARNING_THRESHOLD = TEMP_THRESHOLDS['warning']
+        TEMP_CRITICAL_THRESHOLD = TEMP_THRESHOLDS['critical']
 
         severity = "normal"
 
@@ -662,9 +695,12 @@ class CableService:
         )
 
         temp_series = pd.to_numeric(df.get("Temperature (c)"), errors="coerce")
-        summary["temp_critical_count"] = int((temp_series >= TEMP_CRITICAL_THRESHOLD).sum())
+        # 使用配置的温度阈值
+        temp_warning = TEMP_THRESHOLDS['warning']
+        temp_critical = TEMP_THRESHOLDS['critical']
+        summary["temp_critical_count"] = int((temp_series >= temp_critical).sum())
         summary["temp_warning_count"] = int(
-            ((temp_series >= TEMP_WARNING_THRESHOLD) & (temp_series < TEMP_CRITICAL_THRESHOLD)).sum()
+            ((temp_series >= temp_warning) & (temp_series < temp_critical)).sum()
         )
 
         # Create mask for alarm conditions efficiently

@@ -38,7 +38,7 @@ const endpointFromRow = (row, suffix) => {
   }
 }
 
-function LinkOscillation({ paths, summary }) {
+function LinkOscillation({ paths, summary, totalRows }) {
   const rows = ensureArray(paths)
 
   // 定义严重度判断逻辑
@@ -82,8 +82,7 @@ function LinkOscillation({ paths, summary }) {
   const infoPaths = rows.filter(r => getSeverity(r) === 'info').length
 
   // 指标卡片配置
-  const totalPaths = summary?.total_paths ?? rows.length
-  const previewRows = summary?.preview_rows ?? rows.length
+  const totalPaths = totalRows ?? summary?.total_paths ?? rows.length
   const maxLinkFlaps = summary?.max_link_flaps ?? ((rows[0] ? Number(rows[0].TotalLinkFlaps) : 0) || 0)
 
   const metricCards = [
@@ -93,13 +92,6 @@ function LinkOscillation({ paths, summary }) {
       value: totalPaths,
       description: 'LinkDownedCounter > 0 的唯一端到端路径',
       icon: Activity,
-    },
-    {
-      key: 'preview',
-      label: '前端预览行数',
-      value: previewRows,
-      description: '最多展示 200 条高频震荡路径',
-      icon: RefreshCw,
     },
     {
       key: 'critical',

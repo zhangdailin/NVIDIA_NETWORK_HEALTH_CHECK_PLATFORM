@@ -5,7 +5,7 @@ import { ensureArray } from './analysisUtils'
 /**
  * Subnet Manager信息分析页面
  */
-function SmInfoAnalysis({ smInfoData, summary }) {
+function SmInfoAnalysis({ smInfoData, summary, totalRows }) {
   const rows = ensureArray(smInfoData)
 
   // 定义严重度判断逻辑
@@ -19,9 +19,22 @@ function SmInfoAnalysis({ smInfoData, summary }) {
     }
 
     // 检查SM状态
-    const state = String(row.State || row.SMState || '').toLowerCase()
-    if (state === 'notactive' || state === 'not active' || state === 'down') {
+    const rawState = row.SMStateName ?? row.State ?? row.SMState ?? ''
+    const state = String(rawState).toLowerCase().trim()
+    const status = String(row.Status || '').toLowerCase().trim()
+    const stateMap = {
+      0: 'not active',
+      1: 'discovering',
+      2: 'standby',
+      3: 'master',
+    }
+    const stateText = stateMap[Number(rawState)] || state
+
+    if (stateText === 'not active' || stateText === 'down' || status === 'inactive') {
       return 'warning'
+    }
+    if (stateText === 'standby' || status === 'standby') {
+      return 'info'
     }
 
     return 'ok'
@@ -29,16 +42,25 @@ function SmInfoAnalysis({ smInfoData, summary }) {
 
   // 定义问题描述逻辑
   const getIssueReason = (row) => {
-    const state = String(row.State || row.SMState || '').toLowerCase()
+    const rawState = row.SMStateName ?? row.State ?? row.SMState ?? ''
+    const state = String(rawState).toLowerCase().trim()
+    const status = String(row.Status || '').toLowerCase().trim()
+    const stateMap = {
+      0: 'not active',
+      1: 'discovering',
+      2: 'standby',
+      3: 'master',
+    }
+    const stateText = stateMap[Number(rawState)] || state
     const role = row.Role || row.SMRole || ''
 
-    if (state === 'notactive' || state === 'not active' || state === 'down') {
+    if (stateText === 'not active' || stateText === 'down' || status === 'inactive') {
       return `SM未激活 (${role})`
     }
-    if (state === 'standby') {
+    if (stateText === 'standby' || status === 'standby') {
       return `备用SM (${role})`
     }
-    if (state === 'master') {
+    if (stateText === 'master' || status === 'master') {
       return `主SM (${role})`
     }
 
@@ -65,9 +87,14 @@ function SmInfoAnalysis({ smInfoData, summary }) {
       render: (row) => row['Node Name'] || row.NodeName || row.NodeGUID || 'N/A',
     },
     {
-      key: 'State',
+      key: 'SMStateName',
+      label: 'SM状态',
+      render: (row) => row.SMStateName || row.State || row.SMState || 'N/A',
+    },
+    {
+      key: 'Status',
       label: '状态',
-      render: (row) => row.State || row.SMState || 'N/A',
+      render: (row) => row.Status || 'N/A',
     },
     {
       key: 'Priority',
@@ -80,8 +107,8 @@ function SmInfoAnalysis({ smInfoData, summary }) {
   const preferredColumns = [
     'Node Name',
     'NodeGUID',
-    'State',
-    'SMState',
+    'SMStateName',
+    'Status',
     'Priority',
     'Role',
     'Severity',
@@ -95,6 +122,7 @@ function SmInfoAnalysis({ smInfoData, summary }) {
       emptyHint="请确认采集的数据包中包含Subnet Manager信息。"
       data={smInfoData}
       summary={summary}
+      totalRows={totalRows ?? summary?.total_sms ?? smInfoData?.length}
       getSeverity={getSeverity}
       getIssueReason={getIssueReason}
       previewColumns={previewColumns}

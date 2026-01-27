@@ -14,6 +14,13 @@ from .anomalies import (
 )
 from .explanations import ExplanationKey, get_issue_guide
 
+# 导入配置管理器
+try:
+    from config.thresholds import threshold_config
+except ImportError:
+    # 向后兼容:如果配置模块不存在,使用None
+    threshold_config = None
+
 
 class Severity(Enum):
     CRITICAL = "critical"
@@ -93,21 +100,45 @@ ANOMALY_CATEGORIES = {
     AnomlyType.IBH_RELAY_ERROR: ("errors", Severity.WARNING),
 }
 
-CATEGORY_WEIGHTS = {
-    "ber": 25,
-    "errors": 25,
-    "congestion": 20,
-    "latency": 10,
-    "balance": 5,
-    "config": 13,
-    "anomaly": 2,
-}
+# 从配置加载类别权重
+def _get_category_weights():
+    if threshold_config:
+        return threshold_config.get("health_score.category_weights", {
+            "ber": 25,
+            "errors": 25,
+            "congestion": 20,
+            "latency": 10,
+            "balance": 5,
+            "config": 13,
+            "anomaly": 2,
+        })
+    return {
+        "ber": 25,
+        "errors": 25,
+        "congestion": 20,
+        "latency": 10,
+        "balance": 5,
+        "config": 13,
+        "anomaly": 2,
+    }
 
-SEVERITY_MULTIPLIERS = {
-    Severity.CRITICAL: 3.0,
-    Severity.WARNING: 1.5,
-    Severity.INFO: 0.5,
-}
+CATEGORY_WEIGHTS = _get_category_weights()
+
+# 从配置加载严重性乘数
+def _get_severity_multipliers():
+    if threshold_config:
+        return {
+            Severity.CRITICAL: threshold_config.get("health_score.severity_multipliers.critical", 3.0),
+            Severity.WARNING: threshold_config.get("health_score.severity_multipliers.warning", 1.5),
+            Severity.INFO: threshold_config.get("health_score.severity_multipliers.info", 0.5),
+        }
+    return {
+        Severity.CRITICAL: 3.0,
+        Severity.WARNING: 1.5,
+        Severity.INFO: 0.5,
+    }
+
+SEVERITY_MULTIPLIERS = _get_severity_multipliers()
 
 
 def calculate_health_score(
@@ -237,8 +268,13 @@ def _check_specific_issues(row: Dict, source: str, issues: List[Issue], deductio
     port_number = row.get("PortNumber", 0)
 
     temp = row.get("Temperature (c)", row.get("Temperature", 0))
-    if temp and isinstance(temp, (int, float)) and temp >= 70:
-        severity = Severity.CRITICAL if temp >= 80 else Severity.WARNING
+    # 从配置加载温度阈值
+    temp_warning = threshold_config.get("temperature.warning", 70) if threshold_config else 70
+    temp_critical = threshold_config.get("temperature.critical", 80) if threshold_config else 80
+    temp_weight_base = threshold_config.get("temperature.weight_base", 60) if threshold_config else 60
+
+    if temp and isinstance(temp, (int, float)) and temp >= temp_warning:
+        severity = Severity.CRITICAL if temp >= temp_critical else Severity.WARNING
         issue = Issue(
             severity=severity,
             category="errors",
@@ -270,8 +306,11 @@ def _check_specific_issues(row: Dict, source: str, issues: List[Issue], deductio
         deductions["errors"] += link_down * SEVERITY_MULTIPLIERS[Severity.CRITICAL]
 
     recovery_total = _to_float(row.get("LinkErrorRecoveryCounter")) + _to_float(row.get("LinkErrorRecoveryCounterExt"))
-    if recovery_total >= 3:
-        severity = Severity.CRITICAL if recovery_total >= 10 else Severity.WARNING
+    # 从配置加载链路恢复阈值
+    recovery_warning = threshold_config.get("link_health.link_recovery.warning", 3) if threshold_config else 3
+    recovery_critical = threshold_config.get("link_health.link_recovery.critical", 10) if threshold_config else 10
+    if recovery_total >= recovery_warning:
+        severity = Severity.CRITICAL if recovery_total >= recovery_critical else Severity.WARNING
         issue = Issue(
             severity=severity,
             category="errors",
@@ -344,12 +383,21 @@ def _attach_issue_guide(
 
 
 def _get_grade_and_status(score: int) -> tuple[str, str]:
-    if score >= 90:
+    # 从配置加载评分等级边界
+    if threshold_config:
+        grade_a = threshold_config.get("health_score.grade_boundaries.A", 90)
+        grade_b = threshold_config.get("health_score.grade_boundaries.B", 80)
+        grade_c = threshold_config.get("health_score.grade_boundaries.C", 70)
+        grade_d = threshold_config.get("health_score.grade_boundaries.D", 60)
+    else:
+        grade_a, grade_b, grade_c, grade_d = 90, 80, 70, 60
+
+    if score >= grade_a:
         return "A", "Healthy"
-    if score >= 80:
+    if score >= grade_b:
         return "B", "Healthy"
-    if score >= 70:
+    if score >= grade_c:
         return "C", "Warning"
-    if score >= 60:
+    if score >= grade_d:
         return "D", "Warning"
     return "F", "Critical"

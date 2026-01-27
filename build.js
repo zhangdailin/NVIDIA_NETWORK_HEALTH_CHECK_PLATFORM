@@ -46,7 +46,7 @@ if (fs.existsSync(indexPath)) {
   console.log('✅ 构建验证通过\n');
   console.log('🎉 构建完成！');
   console.log('\n📝 下一步：');
-  console.log('   运行: cd backend && python -m uvicorn main:app --host 0.0.0.0 --port 8000');
+  console.log('   运行: npm run server');
   console.log('   访问: http://localhost:8000\n');
 } else {
   console.error('❌ 构建验证失败：找不到 index.html');

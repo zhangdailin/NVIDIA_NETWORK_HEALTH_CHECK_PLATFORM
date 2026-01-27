@@ -89,33 +89,6 @@ app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 # Include API router
 app.include_router(router, prefix="/api")
 
-# Serve frontend static files (production mode)
-static_dir = Path(__file__).parent / "static"
-if static_dir.exists():
-    @app.get("/")
-    async def serve_frontend():
-        """Serve the frontend index.html"""
-        index_file = static_dir / "index.html"
-        if index_file.exists():
-            return FileResponse(index_file)
-        return {"message": "Frontend not built. Run 'node build.js' first."}
-
-    # Mount static files for assets (JS, CSS, images)
-    app.mount("/assets", StaticFiles(directory=str(static_dir / "assets")), name="assets")
-
-    # Catch-all route for SPA (must be last)
-    @app.get("/{full_path:path}")
-    async def serve_spa(full_path: str):
-        """Serve SPA for all non-API routes"""
-        # Don't intercept API routes
-        if full_path.startswith("api/") or full_path.startswith("docs") or full_path.startswith("redoc"):
-            return {"error": "Not found"}
-
-        index_file = static_dir / "index.html"
-        if index_file.exists():
-            return FileResponse(index_file)
-        return {"message": "Frontend not built. Run 'node build.js' first."}
-
 # Store startup time for health check
 _startup_time = datetime.now()
 
@@ -135,9 +108,6 @@ async def shutdown_event():
     """FastAPI shutdown event handler."""
     cleanup_resources()
 
-# Frontend static files path (for production build)
-FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"
-
 @app.get("/api/health", tags=["health"])
 def health_check():
     """
@@ -156,16 +126,28 @@ def health_check():
         "timestamp": datetime.now().isoformat()
     }
 
+def _resolve_frontend_dir() -> Path | None:
+    candidates = [
+        Path(__file__).parent / "static",
+        Path(__file__).parent.parent / "frontend" / "dist",
+    ]
+    for candidate in candidates:
+        if (candidate / "index.html").exists():
+            return candidate
+    return None
 
-# Serve frontend static files in production
-if FRONTEND_DIST.exists():
-    # Mount static assets
-    app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
+
+frontend_dir = _resolve_frontend_dir()
+
+if frontend_dir:
+    assets_dir = frontend_dir / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
     @app.get("/", tags=["health"])
     async def serve_frontend():
         """Serve frontend index.html."""
-        return FileResponse(FRONTEND_DIST / "index.html")
+        return FileResponse(frontend_dir / "index.html")
 
     @app.get("/{full_path:path}")
     async def serve_spa(request: Request, full_path: str):
@@ -174,13 +156,11 @@ if FRONTEND_DIST.exists():
         if full_path.startswith(("api/", "uploads/", "docs", "redoc", "openapi.json")):
             return {"detail": "Not Found"}
 
-        # Check if it's a static file
-        file_path = FRONTEND_DIST / full_path
+        file_path = frontend_dir / full_path
         if file_path.exists() and file_path.is_file():
             return FileResponse(file_path)
 
-        # Return index.html for SPA routing
-        return FileResponse(FRONTEND_DIST / "index.html")
+        return FileResponse(frontend_dir / "index.html")
 else:
     @app.get("/", tags=["health"])
     def read_root():

@@ -20,6 +20,12 @@ from .adaptive_limiter import apply_adaptive_limit
 from .ibdiagnet import read_index_table, read_table
 from .topology_lookup import TopologyLookup
 
+# 导入配置管理器
+try:
+    from config.thresholds import threshold_config
+except ImportError:
+    threshold_config = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -123,7 +129,9 @@ class TempAlertsService:
             # Check if approaching threshold
             if severity == "normal" and warning_threshold > 0:
                 margin = (warning_threshold - current_temp) / warning_threshold * 100
-                if margin < 10:
+                # 从配置加载margin阈值
+                margin_threshold = threshold_config.get("temperature.margin_percentage", 10) if threshold_config else 10
+                if margin < margin_threshold:
                     issues.append(f"Approaching warning threshold: {margin:.1f}% margin")
                     severity = "info"
 

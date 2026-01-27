@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Database, AlertTriangle, CheckCircle, Info } from 'lucide-react'
+import { Database, AlertTriangle, CheckCircle, Info, Download } from 'lucide-react'
 import DataTable from './DataTable'
 import useStreamingData from './useStreamingData'
 import StreamingProgress from './StreamingProgress'
@@ -14,6 +14,7 @@ import {
   filterBySeverity,
   countBySeverity,
 } from './analysisUtils'
+import { exportToCSV, exportToJSON } from './utils/exportUtils'
 
 /**
  * 通用分析页面组件
@@ -70,6 +71,8 @@ function UnifiedAnalysisPage({
   // Choose data source: streaming or props
   const sourceData = enableStreaming ? streamingResult.data : data
   const rows = useMemo(() => ensureArray(sourceData), [sourceData])
+  const resolvedTotalRows = Number.isFinite(totalRows) && totalRows > 0 ? totalRows : rows.length
+  const noIssueRows = rows.length === 0 && resolvedTotalRows > 0
 
   // Debug: 检查数据
   console.log('[UnifiedAnalysisPage] RAW DATA:', title)
@@ -123,7 +126,7 @@ function UnifiedAnalysisPage({
   }
 
   // 空数据状态
-  if (rows.length === 0) {
+  if (rows.length === 0 && resolvedTotalRows <= 0) {
     return (
       <div className="osc-empty">
         <p>{emptyMessage}</p>
@@ -137,7 +140,7 @@ function UnifiedAnalysisPage({
     {
       key: 'total',
       label: '总数',
-      value: totalRows ?? rows.length,
+      value: resolvedTotalRows,
       description: '全部检测项',
       icon: Database,
     },
@@ -314,9 +317,9 @@ function UnifiedAnalysisPage({
       {renderCustomSection && renderCustomSection({ annotatedRows, severityCounts, summary })}
 
       {/* Top N 预览表 */}
-      {renderTopPreview(topCriticalRows, 'critical', severityCounts.critical)}
-      {renderTopPreview(topWarningRows, 'warning', severityCounts.warning)}
-      {showInfoLevel && renderTopPreview(topInfoRows, 'info', severityCounts.info)}
+      {!noIssueRows && renderTopPreview(topCriticalRows, 'critical', severityCounts.critical)}
+      {!noIssueRows && renderTopPreview(topWarningRows, 'warning', severityCounts.warning)}
+      {!noIssueRows && showInfoLevel && renderTopPreview(topInfoRows, 'info', severityCounts.info)}
 
       {/* 表格前自定义内容 */}
       {renderBeforeTable && renderBeforeTable({ annotatedRows, severityCounts, summary })}
@@ -360,36 +363,47 @@ function UnifiedAnalysisPage({
             <p>包含完整信息，便于深入分析。点击下方标签可筛选。</p>
           </div>
           <span className="osc-section-tag">
-            展示 {filteredRows.length} / 总计 {formatCount(totalRows ?? rows.length)}
+            展示 {filteredRows.length} / 总计 {formatCount(resolvedTotalRows)}
           </span>
         </div>
 
-        {/* 严重度筛选条 */}
-        <div className="osc-chip-row" style={{ marginTop: '16px', marginBottom: '16px' }}>
-          {severityChips.map(chip => (
-            <div
-              key={chip.key}
-              className={`osc-chip ${selectedSeverity === chip.key ? 'osc-chip-selected' : ''}`}
-              style={{ background: chip.background, color: chip.color, cursor: 'pointer' }}
-              onClick={() => handleChipClick(chip.key)}
-            >
-              <div className="osc-chip-label">{chip.label}</div>
-              <div className="osc-chip-value">{formatCount(chip.count)}</div>
-              {chip.previewCount !== null && (
-                <div className="osc-chip-sub">预览 {chip.previewCount}</div>
-              )}
+        {noIssueRows ? (
+          <div className="osc-empty" style={{ marginTop: '12px' }}>
+            <p>当前仅返回异常行，未检测到可展示的异常记录。</p>
+            <p style={{ margin: 0, color: '#6b7280' }}>
+              如需查看完整数据，请将 `RETURN_ONLY_ISSUES` 设为 `false` 后重试。
+            </p>
+          </div>
+        ) : (
+          <>
+            {/* 严重度筛选条 */}
+            <div className="osc-chip-row" style={{ marginTop: '16px', marginBottom: '16px' }}>
+              {severityChips.map(chip => (
+                <div
+                  key={chip.key}
+                  className={`osc-chip ${selectedSeverity === chip.key ? 'osc-chip-selected' : ''}`}
+                  style={{ background: chip.background, color: chip.color, cursor: 'pointer' }}
+                  onClick={() => handleChipClick(chip.key)}
+                >
+                  <div className="osc-chip-label">{chip.label}</div>
+                  <div className="osc-chip-value">{formatCount(chip.count)}</div>
+                  {chip.previewCount !== null && (
+                    <div className="osc-chip-sub">预览 {chip.previewCount}</div>
+                  )}
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
 
-        <DataTable
-          rows={filteredRows}
-          totalRows={totalRows ?? rows.length}
-          searchPlaceholder={searchPlaceholder}
-          pageSize={pageSize}
-          preferredColumns={['IssueSeverity', 'IssueReason', ...preferredColumns]}
-          defaultSortKey="__severityOrder"
-        />
+            <DataTable
+              rows={filteredRows}
+              totalRows={resolvedTotalRows}
+              searchPlaceholder={searchPlaceholder}
+              pageSize={pageSize}
+              preferredColumns={['IssueSeverity', 'IssueReason', ...preferredColumns]}
+              defaultSortKey="__severityOrder"
+            />
+          </>
+        )}
       </div>
     </div>
   )

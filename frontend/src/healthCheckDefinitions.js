@@ -54,7 +54,7 @@ const HEALTH_CHECK_GROUPS = [
     key: 'congestion',
     label: '拥塞与带宽',
     description: '发送等待、时延与按通道表现',
-    checks: ['xmit', 'latency', 'per_lane_performance'],
+    checks: ['xmit', 'per_lane_performance'],
   },
   {
     key: 'ber',
@@ -78,7 +78,7 @@ const HEALTH_CHECK_GROUPS = [
     key: 'routing',
     label: '路由与拓扑',
     description: '交换机、路由与分层结构',
-    checks: ['switches', 'routing', 'routing_config', 'port_hierarchy'],
+    checks: ['routing', 'routing_config', 'port_hierarchy'],
   },
   {
     key: 'performance',

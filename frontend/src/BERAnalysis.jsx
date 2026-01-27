@@ -52,7 +52,7 @@ const pickFormattedBer = (directCandidates = [], numericCandidates = [], logCand
   return 'N/A'
 }
 
-function BERAnalysis({ berData = [], showOnlyProblematic = false }) {
+function BERAnalysis({ berData = [], showOnlyProblematic = false, totalRows }) {
   const rows = ensureArray(berData)
 
   // 定义严重度判断逻辑
@@ -195,7 +195,7 @@ function BERAnalysis({ berData = [], showOnlyProblematic = false }) {
       emptyMessage="无 BER 故障数据"
       emptyHint="当前网络状态良好，未检测到误码率问题。点击'显示全部'查看所有端口。"
       data={enrichedData}
-      totalRows={enrichedData.length}
+      totalRows={totalRows ?? enrichedData.length}
       getSeverity={getSeverity}
       getIssueReason={getIssueReason}
       topPreviewLimit={10}

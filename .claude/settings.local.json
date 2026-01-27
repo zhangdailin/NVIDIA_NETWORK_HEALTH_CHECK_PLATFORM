@@ -43,7 +43,18 @@
       "Bash(npm run server)",
       "Bash(do echo \"Processing $file...\")",
       "Bash(npm run dev)",
-      "Bash(powershell -Command:*)"
+      "Bash(powershell -Command:*)",
+      "Bash(node:*)",
+      "WebFetch(domain:docs.nvidia.com)",
+      "Bash(pkill -f \"python.*main.py\")",
+      "Bash(pkill -f \"vite\")",
+      "Bash(tasklist)",
+      "Bash(taskkill /F /IM python.exe)",
+      "Bash(taskkill /F /IM node.exe)",
+      "Bash(timeout 3 cmd /c \"type C:\\\\Users\\\\ZHANGD~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\d--Code-NVIDIA-NETWORK-HEALTH-CHECK-PLATFORM\\\\tasks\\\\b6bd4e1.output\")",
+      "Bash(copy:*)",
+      "Bash(git push:*)",
+      "Bash(git reset:*)"
     ]
   }
 }

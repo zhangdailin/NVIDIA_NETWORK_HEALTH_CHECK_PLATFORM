@@ -33,6 +33,7 @@ SYMBOL_BER_SENTINEL_VALUE = 1.5e-254
 class BerAnalysis:
     data: List[dict]
     anomalies: pd.DataFrame
+    total_rows: int = 0
 
 
 class BerService:
@@ -88,13 +89,15 @@ class BerService:
             frames.append(warnings_df)
 
         records: List[dict] = []
+        total_rows = 0
         if frames:
             # Filter out empty or all-NA dataframes to avoid FutureWarning
             non_empty_frames = [f for f in frames if not f.empty and not f.isna().all().all()]
             if not non_empty_frames:
-                return BerAnalysis(data=[], anomalies=anomalies)
+                return BerAnalysis(data=[], anomalies=anomalies, total_rows=0)
             combined = pd.concat(non_empty_frames, ignore_index=True, sort=False)
             combined = self._topology_lookup().annotate_ports(combined, guid_col="NodeGUID", port_col="PortNumber")
+            total_rows = len(combined)
 
             # Filter to only issues if requested
             if return_only_issues and "SymbolBERSeverity" in combined.columns:
@@ -116,7 +119,7 @@ class BerService:
 
             combined = combined[self.DISPLAY_COLUMNS]
             records = combined.to_dict(orient="records")
-        return BerAnalysis(data=records, anomalies=anomalies)
+        return BerAnalysis(data=records, anomalies=anomalies, total_rows=total_rows)
 
     def _load_dataframe(self) -> pd.DataFrame:
         if self._df is not None:

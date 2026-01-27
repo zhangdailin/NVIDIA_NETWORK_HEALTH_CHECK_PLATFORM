@@ -60,11 +60,15 @@ from .vports_service import VPortsService
 from .warnings_service import WarningsService
 from .xmit_service import XmitService
 
+# Import progress tracker
+from .progress_tracker import update_progress, get_service_display_name
+
 logger = logging.getLogger(__name__)
 
 MAX_PREVIEW_ROWS: Optional[int] = None
 SERVICE_TIMEOUT_SECONDS: int = int(os.getenv("SERVICE_TIMEOUT_SECONDS", "60"))  # Timeout for individual service execution
 RETURN_ONLY_ISSUES: bool = os.getenv("RETURN_ONLY_ISSUES", "true").lower() == "true"  # Read from environment variable
+MAX_CONCURRENT_SERVICES: int = max(1, int(os.getenv("ANALYSIS_MAX_CONCURRENCY", "4")))
 
 @dataclass
 class IbdiagnetDataset:
@@ -231,27 +235,60 @@ class AnalysisService:
                 ("n2n_security", "Running N2N Security analysis...", self._run_n2n_security_service),
             ]
 
-            service_futures = {}
-            for name, log_message, runner in service_specs:
-                logger.info(log_message)
-                service_futures[name] = loop.run_in_executor(executor, runner, target_dir)
+            total_services = len(service_specs)
+            completed_services = 0
+            service_results: Dict[str, object] = {}
 
-            # Execute all services with individual timeouts
-            results = []
-            for (name, _, _), future in zip(service_specs, service_futures.values()):
-                try:
-                    result = await asyncio.wait_for(future, timeout=SERVICE_TIMEOUT_SECONDS)
-                    results.append(result)
-                except asyncio.TimeoutError:
-                    logger.warning(f"Service {name} timed out after {SERVICE_TIMEOUT_SECONDS}s, using empty result")
-                    results.append(self._get_empty_service_result(name))
-                except Exception as e:
-                    logger.error(f"Service {name} failed: {e}")
-                    results.append(self._get_empty_service_result(name))
+            semaphore = asyncio.Semaphore(MAX_CONCURRENT_SERVICES)
 
-            service_results = {
-                name: result for (name, _, _), result in zip(service_specs, results)
-            }
+            async def run_service(name: str, log_message: str, runner):
+                async with semaphore:
+                    logger.info(log_message)
+                    try:
+                        result = await asyncio.wait_for(
+                            loop.run_in_executor(executor, runner, target_dir),
+                            timeout=SERVICE_TIMEOUT_SECONDS
+                        )
+                        return name, result
+                    except asyncio.TimeoutError:
+                        logger.warning(
+                            "Service %s timed out after %ss, using empty result",
+                            name,
+                            SERVICE_TIMEOUT_SECONDS
+                        )
+                        return name, self._get_empty_service_result(name)
+                    except Exception as exc:
+                        logger.error("Service %s failed: %s", name, exc)
+                        return name, self._get_empty_service_result(name)
+
+            tasks = [
+                asyncio.create_task(run_service(name, log_message, runner))
+                for name, log_message, runner in service_specs
+            ]
+
+            for future in asyncio.as_completed(tasks):
+                name, result = await future
+                service_results[name] = result
+                completed_services += 1
+
+                progress_percent = int((completed_services / total_services) * 100)
+                service_display_name = get_service_display_name(name)
+                update_progress(
+                    task_id=task_id,
+                    stage='analyzing',
+                    progress=progress_percent,
+                    current_service=name,
+                    message=f'已完成{service_display_name}'
+                )
+
+            # Mark as completed
+            update_progress(
+                task_id=task_id,
+                stage='completed',
+                progress=100,
+                current_service='',
+                message='分析完成'
+            )
 
             logger.info("All analyses completed")
 
@@ -294,36 +331,65 @@ class AnalysisService:
         cable_rows = cable_analysis.data
         cable_summary = cable_analysis.summary or {}
         xmit_rows = xmit_analysis.data
+        xmit_summary = getattr(xmit_analysis, "summary", {}) or {}
         link_oscillation_rows = link_oscillation_analysis.data
+        link_oscillation_summary = link_oscillation_analysis.summary or {}
         ber_rows = ber_analysis.data
         hca_rows = hca_data
         fan_rows = fan_analysis.data
+        fan_summary = getattr(fan_analysis, "summary", {}) or {}
         histogram_rows = histogram_analysis.data
+        histogram_summary = histogram_analysis.summary or {}
         switch_rows = switch_analysis.data
+        switch_summary = switch_analysis.summary or {}
         routing_rows = routing_analysis.data
+        routing_summary = routing_analysis.summary or {}
         qos_rows = qos_analysis.data
+        qos_summary = qos_analysis.summary or {}
         sm_info_rows = sm_info_analysis.data
+        sm_info_summary = sm_info_analysis.summary or {}
         port_hierarchy_rows = port_hierarchy_analysis.data
+        port_hierarchy_summary = port_hierarchy_analysis.summary or {}
         mlnx_counters_rows = mlnx_counters_analysis.data
+        mlnx_counters_summary = mlnx_counters_analysis.summary or {}
         pm_delta_rows = pm_delta_analysis.data
+        pm_delta_summary = pm_delta_analysis.summary or {}
         vports_rows = vports_analysis.data
+        vports_summary = vports_analysis.summary or {}
         pkey_rows = pkey_analysis.data
+        pkey_summary = pkey_analysis.summary or {}
         system_info_rows = system_info_analysis.data
+        system_info_summary = system_info_analysis.summary or {}
         extended_port_info_rows = extended_port_info_analysis.data
+        extended_port_info_summary = extended_port_info_analysis.summary or {}
         ar_info_rows = ar_info_analysis.data
+        ar_info_summary = ar_info_analysis.summary or {}
         sharp_rows = sharp_analysis.data
+        sharp_summary = sharp_analysis.summary or {}
         fec_mode_rows = fec_mode_analysis.data
+        fec_mode_summary = fec_mode_analysis.summary or {}
         phy_diagnostics_rows = phy_diagnostics_analysis.data
+        phy_diagnostics_summary = phy_diagnostics_analysis.summary or {}
         neighbors_rows = neighbors_analysis.data
+        neighbors_summary = neighbors_analysis.summary or {}
         buffer_histogram_rows = buffer_histogram_analysis.data
+        buffer_histogram_summary = buffer_histogram_analysis.summary or {}
         extended_node_info_rows = extended_node_info_analysis.data
+        extended_node_info_summary = extended_node_info_analysis.summary or {}
         extended_switch_info_rows = extended_switch_info_analysis.data
+        extended_switch_info_summary = extended_switch_info_analysis.summary or {}
         power_sensors_rows = power_sensors_analysis.data
+        power_sensors_summary = power_sensors_analysis.summary or {}
         routing_config_rows = routing_config_analysis.data
+        routing_config_summary = routing_config_analysis.summary or {}
         temp_alerts_rows = temp_alerts_analysis.data
+        temp_alerts_summary = temp_alerts_analysis.summary or {}
         pci_performance_rows = pci_performance_analysis.data
+        pci_performance_summary = pci_performance_analysis.summary or {}
         per_lane_performance_rows = per_lane_performance_analysis.data
+        per_lane_performance_summary = per_lane_performance_analysis.summary or {}
         n2n_security_rows = n2n_security_analysis.data
+        n2n_security_summary = n2n_security_analysis.summary or {}
 
         cable_anomalies = self._flatten_anomaly_records(cable_analysis.anomalies)
         xmit_anomalies = self._flatten_anomaly_records(xmit_analysis.anomalies)
@@ -387,6 +453,36 @@ class AnalysisService:
         # Use original datasets for building the final payload
         datasets = original_datasets
         dataset_totals = {name: len(rows) for name, rows in datasets.items()}
+
+        def _summary_total(summary: Dict[str, object], keys: Tuple[str, ...]) -> Optional[int]:
+            if not summary:
+                return None
+            for key in keys:
+                value = summary.get(key)
+                if isinstance(value, numbers.Number) and value >= 0:
+                    return int(value)
+            return None
+
+        summary_totals = {
+            "cable": _summary_total(cable_summary, ("total_cables", "total_ports")),
+            "xmit": _summary_total(xmit_summary, ("total_ports",)),
+            "link_oscillation": _summary_total(link_oscillation_summary, ("total_paths",)),
+            "histogram": _summary_total(histogram_summary, ("total_ports",)),
+            "switch": _summary_total(switch_summary, ("total_switches",)),
+            "sm_info": _summary_total(sm_info_summary, ("total_sms",)),
+            "mlnx_counters": _summary_total(mlnx_counters_summary, ("total_ports_analyzed", "total_ports_with_activity")),
+            "pci_performance": _summary_total(pci_performance_summary, ("total_nodes",)),
+            "extended_node_info": _summary_total(extended_node_info_summary, ("total_nodes",)),
+            "per_lane_performance": _summary_total(per_lane_performance_summary, ("total_ports_analyzed",)),
+        }
+
+        for name, total in summary_totals.items():
+            if total is not None:
+                dataset_totals[name] = total
+
+        ber_total_rows = getattr(ber_analysis, "total_rows", None)
+        if isinstance(ber_total_rows, numbers.Number) and ber_total_rows >= 0:
+            dataset_totals["ber"] = int(ber_total_rows)
 
         # Build anomaly index map first (needed for filtered_datasets)
         extra_sources = [
@@ -474,33 +570,34 @@ class AnalysisService:
             "data": self._preview_records(analysis_full_rows),
             "data_issue_rows": self._preview_records(analysis_rows),
             "cable_summary": cable_summary,
-            "switch_summary": switch_analysis.summary,
-            "routing_summary": routing_analysis.summary,
-            "xmit_summary": getattr(xmit_analysis, "summary", {}),
-            "link_oscillation_summary": link_oscillation_analysis.summary,
-            "histogram_summary": getattr(histogram_analysis, "summary", {}),
-            "qos_summary": qos_analysis.summary,
-            "sm_info_summary": sm_info_analysis.summary,
-            "port_hierarchy_summary": port_hierarchy_analysis.summary,
-            "mlnx_counters_summary": mlnx_counters_analysis.summary,
-            "pm_delta_summary": pm_delta_analysis.summary,
-            "vports_summary": vports_analysis.summary,
-            "pkey_summary": pkey_analysis.summary,
-            "system_info_summary": system_info_analysis.summary,
-            "extended_port_info_summary": extended_port_info_analysis.summary,
-            "ar_info_summary": ar_info_analysis.summary,
-            "sharp_summary": sharp_analysis.summary,
-            "fec_mode_summary": fec_mode_analysis.summary,
-            "phy_diagnostics_summary": phy_diagnostics_analysis.summary,
-            "neighbors_summary": neighbors_analysis.summary,
-            "buffer_histogram_summary": buffer_histogram_analysis.summary,
-            "extended_node_info_summary": extended_node_info_analysis.summary,
-            "extended_switch_info_summary": extended_switch_info_analysis.summary,
-            "power_sensors_summary": power_sensors_analysis.summary,
-            "routing_config_summary": routing_config_analysis.summary,
-            "temp_alerts_summary": temp_alerts_analysis.summary,            "pci_performance_summary": pci_performance_analysis.summary,
-            "per_lane_performance_summary": per_lane_performance_analysis.summary,
-            "n2n_security_summary": n2n_security_analysis.summary,
+            "switch_summary": switch_summary,
+            "routing_summary": routing_summary,
+            "xmit_summary": xmit_summary,
+            "link_oscillation_summary": link_oscillation_summary,
+            "histogram_summary": histogram_summary,
+            "qos_summary": qos_summary,
+            "sm_info_summary": sm_info_summary,
+            "port_hierarchy_summary": port_hierarchy_summary,
+            "mlnx_counters_summary": mlnx_counters_summary,
+            "pm_delta_summary": pm_delta_summary,
+            "vports_summary": vports_summary,
+            "pkey_summary": pkey_summary,
+            "system_info_summary": system_info_summary,
+            "extended_port_info_summary": extended_port_info_summary,
+            "ar_info_summary": ar_info_summary,
+            "sharp_summary": sharp_summary,
+            "fec_mode_summary": fec_mode_summary,
+            "phy_diagnostics_summary": phy_diagnostics_summary,
+            "neighbors_summary": neighbors_summary,
+            "buffer_histogram_summary": buffer_histogram_summary,
+            "extended_node_info_summary": extended_node_info_summary,
+            "extended_switch_info_summary": extended_switch_info_summary,
+            "power_sensors_summary": power_sensors_summary,
+            "routing_config_summary": routing_config_summary,
+            "temp_alerts_summary": temp_alerts_summary,
+            "pci_performance_summary": pci_performance_summary,
+            "per_lane_performance_summary": per_lane_performance_summary,
+            "n2n_security_summary": n2n_security_summary,
             "warnings_by_category": warnings_by_category,
             "warnings_summary": warnings_summary,
             "debug_stdout": brief_payload.get("debug_stdout", ""),

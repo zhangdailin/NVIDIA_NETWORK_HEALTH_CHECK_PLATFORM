@@ -132,18 +132,18 @@ function DataTable({
 
   return (
     <div className="table-container">
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
+      <div className="data-table-toolbar">
         <input
           type="text"
           placeholder={searchPlaceholder}
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          style={{ flex: '1', minWidth: '240px', padding: '8px 10px', borderRadius: '6px', border: '1px solid #d1d5db' }}
+          className="data-table-search"
         />
         {sortConfig?.key && (
           <button
             onClick={() => setSortConfig(null)}
-            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #d1d5db', background: '#fff' }}
+            className="data-table-reset"
           >
             清除排序
           </button>
@@ -157,7 +157,7 @@ function DataTable({
                 <button
                   type="button"
                   onClick={() => toggleSort(col)}
-                  style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}
+                  className="data-table-sort"
                 >
                   <span>{col}</span>
                   <span>{renderSortIndicator(col)}</span>
@@ -175,7 +175,7 @@ function DataTable({
                   return <td key={col}>—</td>
                 }
                 if (typeof value === 'object') {
-                  return <td key={col} style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{JSON.stringify(value)}</td>
+                  return <td key={col} className="data-table-cell-mono">{JSON.stringify(value)}</td>
                 }
                 return <td key={col}>{String(value)}</td>
               })}
@@ -183,35 +183,30 @@ function DataTable({
           ))}
         </tbody>
       </table>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', flexWrap: 'wrap', gap: '8px' }}>
-        <div style={{ display: 'flex', gap: '8px' }}>
+      <div className="data-table-pagination">
+        <div className="data-table-pagination-controls">
           <button
-            style={{ padding: '6px 12px', borderRadius: '4px', border: '1px solid #1f2937', background: '#0f172a', color: '#e2e8f0', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', opacity: currentPage === 1 ? 0.4 : 1 }}
+            className="data-table-page-btn"
             disabled={currentPage === 1}
             onClick={() => setPage(Math.max(1, currentPage - 1))}
           >
             Previous
           </button>
           <button
-            style={{ padding: '6px 12px', borderRadius: '4px', border: '1px solid #1f2937', background: '#0f172a', color: '#e2e8f0', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', opacity: currentPage === totalPages ? 0.4 : 1 }}
+            className="data-table-page-btn"
             disabled={currentPage === totalPages}
             onClick={() => setPage(Math.min(totalPages, currentPage + 1))}
           >
             Next
           </button>
         </div>
-        <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
+        <span className="data-table-page-info">
           Page {currentPage} / {totalPages}
         </span>
       </div>
-      <p style={{ marginTop: '10px', fontSize: '0.85rem', color: '#94a3b8' }}>
-        Showing rows {startIndex + 1}-{endIndex} of {totalRecords} rows. {previewTrimmed ? `Only ${data.length} rows are included in this preview.` : ''}
+      <p className="data-table-summary">
+        显示第 {startIndex + 1}-{endIndex} 行，共 {totalRecords} 行
       </p>
-      {previewTrimmed && (
-        <p style={{ marginTop: '4px', fontSize: '0.8rem', color: '#94a3b8' }}>
-          Sorting与搜索仅作用于当前预览行，如需完整数据请下载原始 ibdiagnet 包。
-        </p>
-      )}
     </div>
   )
 }

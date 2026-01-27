@@ -5,7 +5,7 @@ import { ensureArray } from './analysisUtils'
 /**
  * 交换机信息分析页面
  */
-function SwitchesAnalysis({ switchData, summary }) {
+function SwitchesAnalysis({ switchData, summary, totalRows }) {
   const rows = ensureArray(switchData)
 
   // 定义严重度判断逻辑
@@ -107,6 +107,7 @@ function SwitchesAnalysis({ switchData, summary }) {
       emptyHint="请确认采集的数据包中包含交换机信息。"
       data={switchData}
       summary={summary}
+      totalRows={totalRows ?? summary?.total_switches ?? switchData?.length}
       getSeverity={getSeverity}
       getIssueReason={getIssueReason}
       previewColumns={previewColumns}

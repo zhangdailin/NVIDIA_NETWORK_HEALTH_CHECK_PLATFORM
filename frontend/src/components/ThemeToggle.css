@@ -1,0 +1,75 @@
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.theme-toggle:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--primary);
+  box-shadow: 0 0 10px rgba(118, 185, 0, 0.2);
+}
+
+.theme-toggle-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+}
+
+.theme-icon {
+  transition: all 0.3s ease;
+}
+
+.theme-icon.sun {
+  color: #f59e0b;
+  animation: rotate 20s linear infinite;
+}
+
+.theme-icon.moon {
+  color: #60a5fa;
+}
+
+.theme-toggle:hover .theme-icon.sun {
+  color: #fbbf24;
+  transform: scale(1.1);
+}
+
+.theme-toggle:hover .theme-icon.moon {
+  color: #93c5fd;
+  transform: scale(1.1);
+}
+
+@keyframes rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.theme-toggle-label {
+  user-select: none;
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .theme-toggle-label {
+    display: none;
+  }
+
+  .theme-toggle {
+    padding: 8px;
+  }
+}

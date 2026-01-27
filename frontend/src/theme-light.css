@@ -1,0 +1,74 @@
+/* 浅色主题变量 */
+[data-theme="light"] {
+  /* 背景颜色 - 浅色 */
+  --bg-primary: #f8f9fa;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f1f3f5;
+  --bg-card: #ffffff;
+  --border-color: #e0e0e0;
+  --border-light: #d0d0d0;
+
+  /* 文字颜色 - 深色 */
+  --text-primary: #1a1a1a;
+  --text-secondary: #4a4a4a;
+  --text-muted: #8a8a8a;
+
+  /* 状态颜色保持不变 */
+  --status-success: #22c55e;
+  --status-warning: #f59e0b;
+  --status-error: #ef4444;
+  --status-info: #3b82f6;
+
+  /* NVIDIA 品牌色保持不变 */
+  --primary: #76b900;
+  --primary-dark: #5a8c00;
+  --primary-light: #8ed100;
+}
+
+/* 浅色主题特定样式调整 */
+[data-theme="light"] .health-card-stat {
+  background: rgba(0, 0, 0, 0.03);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .health-card-stat.critical {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.25);
+}
+
+[data-theme="light"] .health-card-stat.warning {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.25);
+}
+
+[data-theme="light"] .health-card-stat strong {
+  color: var(--text-primary);
+}
+
+[data-theme="light"] .status-pill-ok {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+[data-theme="light"] .status-pill-warning {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+[data-theme="light"] .status-pill-critical {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+[data-theme="light"] .header {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="light"] .card {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .loading-overlay {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(4px);
+}

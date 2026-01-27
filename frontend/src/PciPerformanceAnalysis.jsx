@@ -5,7 +5,7 @@ import { toNumber, ensureArray } from './analysisUtils'
 /**
  * PCIe 性能分析页面
  */
-function PciPerformanceAnalysis({ pciPerformanceData, summary }) {
+function PciPerformanceAnalysis({ pciPerformanceData, summary, totalRows }) {
   const rows = ensureArray(pciPerformanceData)
 
   // 定义严重度判断逻辑
@@ -115,6 +115,7 @@ function PciPerformanceAnalysis({ pciPerformanceData, summary }) {
       emptyHint="请确认采集的数据包中包含 PCIe 性能信息。"
       data={pciPerformanceData}
       summary={summary}
+      totalRows={totalRows ?? summary?.total_nodes ?? pciPerformanceData?.length}
       getSeverity={getSeverity}
       getIssueReason={getIssueReason}
       previewColumns={previewColumns}

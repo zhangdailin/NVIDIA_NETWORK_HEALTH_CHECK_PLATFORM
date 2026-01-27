@@ -1,0 +1,64 @@
+version: "1.0"
+description: "NVIDIA Network Health Check Platform - Default Thresholds"
+
+# 健康评分权重
+health_score:
+  category_weights:
+    ber: 25
+    errors: 25
+    congestion: 20
+    latency: 10
+    balance: 5
+    config: 13
+    anomaly: 2
+
+  severity_multipliers:
+    critical: 3.0
+    warning: 1.5
+    info: 0.5
+
+  grade_boundaries:
+    A: 90
+    B: 80
+    C: 70
+    D: 60
+
+# 温度阈值 (摄氏度)
+temperature:
+  warning: 70
+  critical: 80
+  margin_percentage: 10  # 接近阈值的margin
+  weight_base: 60  # 超过此温度开始计算权重
+
+# 链路健康
+link_health:
+  link_down:
+    threshold: 0  # 任何链路下降都是严重的
+
+  link_recovery:
+    warning: 3
+    critical: 10
+
+# 线缆诊断
+cable:
+  temperature:
+    warning: 70
+    critical: 80
+
+  length_limits:
+    fiber:
+      hdr: 1000  # 米
+      fdr: 2000
+    copper:
+      enabled: false  # 是否启用铜缆长度检查
+      hdr: 5
+      fdr: 3
+
+  max_display_rows: 2000
+
+# 性能限制
+performance:
+  max_cable_rows: 2000
+  max_preview_rows: null  # null = 无限制
+  service_timeout_seconds: 60
+  return_only_issues: true

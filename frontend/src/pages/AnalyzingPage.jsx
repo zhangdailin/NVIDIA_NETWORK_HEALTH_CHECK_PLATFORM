@@ -174,7 +174,7 @@ function AnalyzingPage() {
       <div className="analyzing-container">
         <div className="analyzing-content">
           {/* Icon */}
-          <div className="analyzing-icon">
+          <div className={`analyzing-icon ${stage}`}>
             {stage === 'completed' ? (
               <CheckCircle size={64} color="#22c55e" />
             ) : stage === 'error' ? (

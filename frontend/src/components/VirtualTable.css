@@ -1,0 +1,132 @@
+.virtual-table-container {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-card);
+}
+
+/* 表头 */
+.virtual-table-header {
+  display: flex;
+  background: var(--bg-tertiary);
+  border-bottom: 2px solid var(--border-color);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.virtual-table-header-cell {
+  padding: 12px 16px;
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-right: 1px solid var(--border-color);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.virtual-table-header-cell:last-child {
+  border-right: none;
+}
+
+/* 表格列表容器 */
+.virtual-table-list {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-light) var(--bg-tertiary);
+}
+
+.virtual-table-list::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.virtual-table-list::-webkit-scrollbar-track {
+  background: var(--bg-tertiary);
+}
+
+.virtual-table-list::-webkit-scrollbar-thumb {
+  background: var(--border-light);
+  border-radius: 4px;
+}
+
+.virtual-table-list::-webkit-scrollbar-thumb:hover {
+  background: var(--primary);
+}
+
+/* 表格行 */
+.virtual-table-row {
+  display: flex;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-card);
+  transition: background 0.15s ease;
+}
+
+.virtual-table-row:hover {
+  background: var(--bg-tertiary);
+}
+
+.virtual-table-row.clickable {
+  cursor: pointer;
+}
+
+.virtual-table-row.clickable:active {
+  background: var(--bg-secondary);
+}
+
+/* 表格单元格 */
+.virtual-table-cell {
+  padding: 12px 16px;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  border-right: 1px solid var(--border-color);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+}
+
+.virtual-table-cell:last-child {
+  border-right: none;
+}
+
+/* 空状态 */
+.virtual-table-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+/* 表格底部 */
+.virtual-table-footer {
+  padding: 8px 16px;
+  background: var(--bg-tertiary);
+  border-top: 1px solid var(--border-color);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  text-align: right;
+}
+
+/* 浅色主题适配 */
+[data-theme="light"] .virtual-table-list::-webkit-scrollbar-thumb {
+  background: #c0c0c0;
+}
+
+[data-theme="light"] .virtual-table-list::-webkit-scrollbar-thumb:hover {
+  background: var(--primary);
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .virtual-table-header-cell,
+  .virtual-table-cell {
+    padding: 8px 12px;
+    font-size: 0.8rem;
+  }
+}

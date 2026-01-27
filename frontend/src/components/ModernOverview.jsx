@@ -92,7 +92,7 @@ const ModernOverview = ({ analysisData, onSelectTab }) => {
       subtitle: `${metrics.healthyDevices} 健康`,
       trend: null,
       icon: Server,
-      color: '#3b82f6',
+      color: '#2563eb',
       onClick: () => onSelectTab?.('hca'),
     },
     {
@@ -102,8 +102,8 @@ const ModernOverview = ({ analysisData, onSelectTab }) => {
       subtitle: '平均响应时间',
       trend: metrics.latencyTrend,
       icon: Zap,
-      color: '#10b981',
-      onClick: () => onSelectTab?.('latency'),
+      color: '#059669',
+      onClick: () => onSelectTab?.('histogram'),
     },
     {
       id: 'throughput',
@@ -112,7 +112,7 @@ const ModernOverview = ({ analysisData, onSelectTab }) => {
       subtitle: '实时流量',
       trend: metrics.throughputTrend,
       icon: Activity,
-      color: '#8b5cf6',
+      color: '#0ea5e9',
       onClick: () => onSelectTab?.('xmit'),
     },
     {
@@ -133,13 +133,13 @@ const ModernOverview = ({ analysisData, onSelectTab }) => {
       label: 'GPU 服务器',
       value: analysisData.hca_data?.length || 0,
       icon: Cpu,
-      color: '#06b6d4',
+      color: '#0ea5e9',
     },
     {
       label: '交换机',
       value: analysisData.switch_data?.length || 0,
       icon: Network,
-      color: '#ec4899',
+      color: '#0f766e',
     },
     {
       label: '总端口数',
@@ -181,28 +181,6 @@ const ModernOverview = ({ analysisData, onSelectTab }) => {
               <span><HardDrive size={14} /> {metrics.totalPorts} 端口</span>
               <span><Clock size={14} /> 实时监控</span>
             </div>
-          </div>
-        </div>
-        <div className="health-banner-right">
-          <div className="time-range-selector">
-            <button
-              className={timeRange === '1h' ? 'active' : ''}
-              onClick={() => setTimeRange('1h')}
-            >
-              1小时
-            </button>
-            <button
-              className={timeRange === '24h' ? 'active' : ''}
-              onClick={() => setTimeRange('24h')}
-            >
-              24小时
-            </button>
-            <button
-              className={timeRange === '7d' ? 'active' : ''}
-              onClick={() => setTimeRange('7d')}
-            >
-              7天
-            </button>
           </div>
         </div>
       </div>
