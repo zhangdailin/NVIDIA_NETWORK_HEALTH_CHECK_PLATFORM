@@ -73,8 +73,8 @@ app.add_middleware(
 # Compress responses larger than 1KB with gzip
 app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=6)
 
-# Add rate limiting middleware (10 requests per minute per IP)
-app.add_middleware(RateLimitMiddleware, requests_per_minute=10)
+# Add rate limiting middleware (100 requests per minute per IP)
+app.add_middleware(RateLimitMiddleware, requests_per_minute=100)
 
 # Add request ID middleware for tracing
 app.add_middleware(RequestIDMiddleware)

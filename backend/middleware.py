@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """Simple in-memory rate limiting middleware."""
 
-    def __init__(self, app, requests_per_minute: int = 10):
+    def __init__(self, app, requests_per_minute: int = 60):
         super().__init__(app)
         self.requests_per_minute = requests_per_minute
         self.requests = defaultdict(list)
@@ -23,7 +23,14 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         # Skip rate limiting for health check and progress endpoints
-        if request.url.path == "/api/health" or "/progress" in request.url.path:
+        # Skip rate limiting for health check, progress endpoints, and static assets
+        if (
+            request.url.path == "/api/health"
+            or "/progress" in request.url.path
+            or request.url.path.startswith("/assets/")
+            or request.url.path.startswith("/uploads/")
+            or request.url.path in ["/vite.svg", "/favicon.ico"]
+        ):
             return await call_next(request)
 
         # Get client IP
