@@ -39,7 +39,7 @@ class ExtendedNodeInfoService:
         self._index_cache: Optional[pd.DataFrame] = None
         self._topology: Optional[TopologyLookup] = None
 
-    def run(self) -> ExtendedNodeInfoResult:
+    def run(self, return_only_issues: bool = False) -> ExtendedNodeInfoResult:
         """Run Extended Node Info analysis."""
         ext_node_df = self._try_read_table("EXTENDED_NODE_INFO")
         smp_info_df = self._try_read_table("GENERAL_INFO_SMP")
@@ -161,9 +161,17 @@ class ExtendedNodeInfoService:
             r.get("NodeName", "")
         ))
 
-        # Apply configurable row limit
-        # Using adaptive limiter instead of fixed limit
-        limited_records = apply_adaptive_limit(records)
+        # Filter to only issues if requested
+        if return_only_issues:
+            records_filtered = [r for r in records if r["Severity"] in ("critical", "warning")]
+            if records_filtered:
+                logger.info(f"Extended Node Info: filtered {len(records)} rows to {len(records_filtered)} issues")
+            limited_records = apply_adaptive_limit(records_filtered)
+        else:
+            # Apply configurable row limit
+            # Using adaptive limiter instead of fixed limit
+            limited_records = apply_adaptive_limit(records)
+
         return ExtendedNodeInfoResult(data=limited_records, anomalies=None, summary=summary)
 
     def _decode_capabilities(self, cap_mask: int) -> List[str]:

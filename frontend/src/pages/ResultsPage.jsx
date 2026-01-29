@@ -162,6 +162,7 @@ function ResultsPage() {
               hcaData={data.hca_data}
               firmwareWarnings={data.firmware_warnings}
               pciWarnings={data.pci_warnings}
+              totalRows={data.hca_total_rows}
             />
           </div>
         )
@@ -169,7 +170,7 @@ function ResultsPage() {
       case 'fan':
         return (
           <div className="scroll-area">
-            <FanAnalysis fanData={data.fan_data} />
+            <FanAnalysis fanData={data.fan_data} totalRows={data.fan_total_rows} />
           </div>
         )
 
@@ -198,14 +199,14 @@ function ResultsPage() {
       case 'routing':
         return (
           <div className="scroll-area">
-            <RoutingAnalysis routingData={data.routing_data} />
+            <RoutingAnalysis routingData={data.routing_data} totalRows={data.routing_total_rows} />
           </div>
         )
 
       case 'qos':
         return (
           <div className="scroll-area">
-            <QosAnalysis qosData={data.qos_data} />
+            <QosAnalysis qosData={data.qos_data} totalRows={data.qos_total_rows} />
           </div>
         )
 
@@ -223,7 +224,7 @@ function ResultsPage() {
       case 'port_hierarchy':
         return (
           <div className="scroll-area">
-            <PortHierarchyAnalysis portHierarchyData={data.port_hierarchy_data} />
+            <PortHierarchyAnalysis portHierarchyData={data.port_hierarchy_data} totalRows={data.port_hierarchy_total_rows} />
           </div>
         )
 
@@ -241,77 +242,77 @@ function ResultsPage() {
       case 'pm_delta':
         return (
           <div className="scroll-area">
-            <PmDeltaAnalysis pmDeltaData={data.pm_delta_data} />
+            <PmDeltaAnalysis pmDeltaData={data.pm_delta_data} totalRows={data.pm_delta_total_rows} />
           </div>
         )
 
       case 'vports':
         return (
           <div className="scroll-area">
-            <VportsAnalysis vportsData={data.vports_data} />
+            <VportsAnalysis vportsData={data.vports_data} totalRows={data.vports_total_rows} />
           </div>
         )
 
       case 'pkey':
         return (
           <div className="scroll-area">
-            <PkeyAnalysis pkeyData={data.pkey_data} />
+            <PkeyAnalysis pkeyData={data.pkey_data} totalRows={data.pkey_total_rows} />
           </div>
         )
 
       case 'system_info':
         return (
           <div className="scroll-area">
-            <SystemInfoAnalysis systemInfoData={data.system_info_data} />
+            <SystemInfoAnalysis systemInfoData={data.system_info_data} totalRows={data.system_info_total_rows} />
           </div>
         )
 
       case 'extended_port_info':
         return (
           <div className="scroll-area">
-            <ExtendedPortInfoAnalysis extendedPortInfoData={data.extended_port_info_data} />
+            <ExtendedPortInfoAnalysis extendedPortInfoData={data.extended_port_info_data} totalRows={data.extended_port_info_total_rows} />
           </div>
         )
 
       case 'ar_info':
         return (
           <div className="scroll-area">
-            <ArInfoAnalysis arInfoData={data.ar_info_data} />
+            <ArInfoAnalysis arInfoData={data.ar_info_data} totalRows={data.ar_info_total_rows} />
           </div>
         )
 
       case 'sharp':
         return (
           <div className="scroll-area">
-            <SharpAnalysis sharpData={data.sharp_data} />
+            <SharpAnalysis sharpData={data.sharp_data} totalRows={data.sharp_total_rows} />
           </div>
         )
 
       case 'fec_mode':
         return (
           <div className="scroll-area">
-            <FecModeAnalysis fecModeData={data.fec_mode_data} />
+            <FecModeAnalysis fecModeData={data.fec_mode_data} totalRows={data.fec_mode_total_rows} />
           </div>
         )
 
       case 'phy_diagnostics':
         return (
           <div className="scroll-area">
-            <PhyDiagnosticsAnalysis phyDiagnosticsData={data.phy_diagnostics_data} />
+            <PhyDiagnosticsAnalysis phyDiagnosticsData={data.phy_diagnostics_data} totalRows={data.phy_diagnostics_total_rows} />
           </div>
         )
 
       case 'neighbors':
         return (
           <div className="scroll-area">
-            <NeighborsAnalysis neighborsData={data.neighbors_data} />
+            <NeighborsAnalysis neighborsData={data.neighbors_data} totalRows={data.neighbors_total_rows} />
           </div>
         )
 
       case 'buffer_histogram':
         return (
           <div className="scroll-area">
-            <BufferHistogramAnalysis bufferHistogramData={data.buffer_histogram_data} />
+            <BufferHistogramAnalysis bufferHistogramData={data.buffer_histogram_data} totalRows={data.buffer_histogram_total_rows} />
           </div>
         )
 
@@ -329,28 +330,28 @@ function ResultsPage() {
       case 'extended_switch_info':
         return (
           <div className="scroll-area">
-            <ExtendedSwitchInfoAnalysis extendedSwitchInfoData={data.extended_switch_info_data} />
+            <ExtendedSwitchInfoAnalysis extendedSwitchInfoData={data.extended_switch_info_data} totalRows={data.extended_switch_info_total_rows} />
           </div>
         )
 
       case 'power_sensors':
         return (
           <div className="scroll-area">
-            <PowerSensorsAnalysis powerSensorsData={data.power_sensors_data} />
+            <PowerSensorsAnalysis powerSensorsData={data.power_sensors_data} totalRows={data.power_sensors_total_rows} />
           </div>
         )
 
       case 'routing_config':
         return (
           <div className="scroll-area">
-            <RoutingConfigAnalysis routingConfigData={data.routing_config_data} />
+            <RoutingConfigAnalysis routingConfigData={data.routing_config_data} totalRows={data.routing_config_total_rows} />
           </div>
         )
 
       case 'temp_alerts':
         return (
           <div className="scroll-area">
-            <TempAlertsAnalysis tempAlertsData={data.temp_alerts_data} />
+            <TempAlertsAnalysis tempAlertsData={data.temp_alerts_data} totalRows={data.temp_alerts_total_rows} />
           </div>
         )
 
@@ -368,14 +369,14 @@ function ResultsPage() {
       case 'per_lane_performance':
         return (
           <div className="scroll-area">
-            <PerLanePerformanceAnalysis perLanePerformanceData={data.per_lane_performance_data} />
+            <PerLanePerformanceAnalysis perLanePerformanceData={data.per_lane_performance_data} totalRows={data.per_lane_performance_total_rows} />
           </div>
         )
 
       case 'n2n_security':
         return (
           <div className="scroll-area">
-            <N2nSecurityAnalysis n2nSecurityData={data.n2n_security_data} />
+            <N2nSecurityAnalysis n2nSecurityData={data.n2n_security_data} totalRows={data.n2n_security_total_rows} />
           </div>
         )
 
@@ -388,6 +389,12 @@ function ResultsPage() {
     if (!result || result.type !== 'csv') return null
 
     const data = result.data
+
+    // Safety check for analysis object
+    if (!data || !data.analysis) {
+      return <div className="placeholder">UFM 数据格式错误</div>
+    }
+
     const { analysis } = data
 
     switch (activeTab) {
@@ -401,42 +408,66 @@ function ResultsPage() {
       case 'ber':
         return (
           <div className="scroll-area">
-            <UFMBerAnalysis berData={analysis.ber_analysis} />
+            {analysis.ber_analysis ? (
+              <UFMBerAnalysis berData={analysis.ber_analysis} />
+            ) : (
+              <div className="placeholder">暂无 BER 分析数据</div>
+            )}
           </div>
         )
 
       case 'link':
         return (
           <div className="scroll-area">
-            <UFMLinkAnalysis linkData={analysis.link_status} />
+            {analysis.link_status ? (
+              <UFMLinkAnalysis linkData={analysis.link_status} />
+            ) : (
+              <div className="placeholder">暂无链路状态数据</div>
+            )}
           </div>
         )
 
       case 'temp':
         return (
           <div className="scroll-area">
-            <UFMTempAnalysis tempData={analysis.temperature} />
+            {analysis.temperature ? (
+              <UFMTempAnalysis tempData={analysis.temperature} />
+            ) : (
+              <div className="placeholder">暂无温度数据</div>
+            )}
           </div>
         )
 
       case 'cable':
         return (
           <div className="scroll-area">
-            <UFMCableAnalysis cableData={analysis.cables} />
+            {analysis.cables ? (
+              <UFMCableAnalysis cableData={analysis.cables} />
+            ) : (
+              <div className="placeholder">暂无线缆数据</div>
+            )}
           </div>
         )
 
       case 'errors':
         return (
           <div className="scroll-area">
-            <UFMPortErrors portErrorData={analysis.port_errors} />
+            {analysis.port_errors ? (
+              <UFMPortErrors portErrorData={analysis.port_errors} />
+            ) : (
+              <div className="placeholder">暂无端口错误数据</div>
+            )}
           </div>
         )
 
       case 'performance':
         return (
           <div className="scroll-area">
-            <UFMPerformance performanceData={analysis.performance} />
+            {analysis.performance ? (
+              <UFMPerformance performanceData={analysis.performance} />
+            ) : (
+              <div className="placeholder">暂无性能数据</div>
+            )}
           </div>
         )
 

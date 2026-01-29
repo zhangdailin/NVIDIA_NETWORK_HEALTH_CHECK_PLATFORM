@@ -734,15 +734,15 @@ export const ERROR_KNOWLEDGE_BASE = {
   },
 
   // ==================== Xmit/Congestion 相关问题 ====================
-  XMIT_SEVERE_CONGESTION: {
+  XMIT_CRITICAL_CONGESTION: {
     title: '严重拥塞',
-    titleEn: 'Severe Congestion',
+    titleEn: 'Critical Congestion',
     category: 'xmit',
     severity: 'critical',
     threshold: 'WaitRatioPct ≥ 5%',
     thresholdValue: 5,
     why_it_matters: '端口等待时间超过5%表明严重拥塞，会导致吞吐量大幅下降、延迟增加、应用性能严重受影响。',
-    why_it_matters_en: 'Port wait time exceeding 5% indicates severe congestion, causing significant throughput reduction, increased latency, and severe application performance impact.',
+    why_it_matters_en: 'Port wait time exceeding 5% indicates critical congestion, causing significant throughput reduction, increased latency, and severe application performance impact.',
     likely_causes: [
       '下游交换机或节点处理能力不足',
       '路由配置不当导致流量集中',

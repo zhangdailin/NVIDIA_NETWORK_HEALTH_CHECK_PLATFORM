@@ -92,6 +92,11 @@ class BaseAnalysisService(ABC):
         try:
             if pd.isna(value):
                 return default
+            # Handle string values like "N/A", "ERR", etc.
+            if isinstance(value, str):
+                value = value.strip()
+                if value.upper() in ('N/A', 'ERR', '', 'NONE', 'NULL'):
+                    return default
             return int(float(value))
         except (TypeError, ValueError):
             return default

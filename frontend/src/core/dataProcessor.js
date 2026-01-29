@@ -157,9 +157,9 @@ function calculatePerformanceMetrics(rawData) {
     },
     congestion: {
       level: congestionLevel,
-      severeCount: xmitSummary.severe_ports || 0,
+      severeCount: xmitSummary.critical_ports || 0,
       warningCount: xmitSummary.warning_ports || 0,
-      status: congestionLevel === 'severe' ? 'critical' : congestionLevel === 'warning' ? 'warning' : 'ok',
+      status: congestionLevel === 'critical' ? 'critical' : congestionLevel === 'warning' ? 'warning' : 'ok',
     },
     linkOscillation: {
       count: oscillationCount,
@@ -188,10 +188,10 @@ function extractLatencyValue(summary) {
  * 提取拥塞级别
  */
 function extractCongestionLevel(summary) {
-  const severeCount = toNumber(summary.severe_ports || 0)
+  const criticalCount = toNumber(summary.critical_ports || 0)
   const warningCount = toNumber(summary.warning_ports || 0)
 
-  if (severeCount > 0) return 'severe'
+  if (criticalCount > 0) return 'critical'
   if (warningCount > 0) return 'warning'
   return 'normal'
 }
@@ -247,7 +247,7 @@ function calculateItemSeverity(rows, summary, definition) {
 
   // 从 summary 中提取（如果有）
   if (summary) {
-    critical += extractSummaryCount(summary, ['critical', 'severe', 'critical_count'])
+    critical += extractSummaryCount(summary, ['critical', 'critical_count'])
     warning += extractSummaryCount(summary, ['warning', 'warn', 'warning_count'])
   }
 
@@ -280,7 +280,7 @@ function extractRowSeverity(row, definition) {
     if (!value) continue
 
     const normalized = String(value).toLowerCase()
-    if (normalized.includes('critical') || normalized.includes('severe') || normalized.includes('error')) {
+    if (normalized.includes('critical') || normalized.includes('error')) {
       return 'critical'
     }
     if (normalized.includes('warning') || normalized.includes('warn') || normalized.includes('alert')) {

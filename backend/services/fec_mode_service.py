@@ -47,7 +47,7 @@ class FecModeService:
         self._index_cache: Optional[pd.DataFrame] = None
         self._topology: Optional[TopologyLookup] = None
 
-    def run(self) -> FecModeResult:
+    def run(self, return_only_issues: bool = False) -> FecModeResult:
         """Run FEC Mode analysis."""
         fec_df = self._try_read_table("FEC_MODE")
 

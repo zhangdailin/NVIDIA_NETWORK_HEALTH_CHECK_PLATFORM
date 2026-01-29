@@ -31,7 +31,7 @@ class SwitchService:
         self._index_cache: Optional[pd.DataFrame] = None
         self._topology: Optional[TopologyLookup] = None
 
-    def run(self) -> SwitchResult:
+    def run(self, return_only_issues: bool = False) -> SwitchResult:
         """Run switch analysis."""
         index_table = self._get_index_table()
         records = []

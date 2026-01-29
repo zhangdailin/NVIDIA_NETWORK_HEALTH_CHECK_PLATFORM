@@ -38,7 +38,7 @@ class ExtendedPortInfoService:
         self._index_cache: Optional[pd.DataFrame] = None
         self._topology: Optional[TopologyLookup] = None
 
-    def run(self) -> ExtendedPortInfoResult:
+    def run(self, return_only_issues: bool = False) -> ExtendedPortInfoResult:
         """Run Extended Port Info analysis."""
         ext_df = self._try_read_table("EXTENDED_PORT_INFO")
 

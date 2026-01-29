@@ -38,7 +38,7 @@ class RoutingService:
         self._index_cache: Optional[pd.DataFrame] = None
         self._topology: Optional[TopologyLookup] = None
 
-    def run(self) -> RoutingResult:
+    def run(self, return_only_issues: bool = False) -> RoutingResult:
         """Run routing analysis combining RN_COUNTERS, HBF_PORT_COUNTERS, FAST_RECOVERY_COUNTERS."""
         records = []
         anomaly_rows = []

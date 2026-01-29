@@ -3,12 +3,22 @@ import UnifiedAnalysisPage from './UnifiedAnalysisPage'
 import { toNumber, formatCount } from './analysisUtils'
 
 function CongestionAnalysis({ xmitData, summary, totalRows, taskId, serviceName, enableStreaming }) {
+  // 空数据检查
+  if (!xmitData || xmitData.length === 0) {
+    return (
+      <div style={{ padding: '40px', textAlign: 'center', color: '#666' }}>
+        <Activity size={48} style={{ marginBottom: '16px', opacity: 0.5 }} />
+        <p>暂无拥塞分析数据</p>
+      </div>
+    )
+  }
+
   // 定义严重度判断逻辑 - 优先使用后端返回的 CongestionLevel
   const getSeverity = (row) => {
     // 如果后端已经计算了 CongestionLevel，直接使用
     if (row.CongestionLevel) {
       const level = String(row.CongestionLevel).toLowerCase()
-      if (level === 'severe') return 'critical'
+      if (level === 'critical') return 'critical'
       if (level === 'warning') return 'warning'
       if (level === 'normal') return 'ok'
     }

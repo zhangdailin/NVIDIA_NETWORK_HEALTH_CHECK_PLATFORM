@@ -142,7 +142,7 @@ const HEALTH_CHECK_DEFINITIONS = {
     severity: {
       rowFields: ['CongestionLevel'],
       assumeWarningWhenRowPresent: false,
-      summaryCriticalTokens: ['severe_ports'],
+      summaryCriticalTokens: ['critical_ports'],
       summaryWarningTokens: ['warning_ports', 'fecn_ports', 'becn_ports', 'link_down_ports'],
     },
   },
@@ -157,7 +157,7 @@ const HEALTH_CHECK_DEFINITIONS = {
     severity: {
       rowFields: [],
       assumeWarningWhenRowPresent: false,
-      summaryCriticalTokens: ['severe_tail_ports'],
+      summaryCriticalTokens: ['critical_tail_ports'],
       summaryWarningTokens: ['high_p99_ports', 'upper_bucket_ports'],
     },
   },

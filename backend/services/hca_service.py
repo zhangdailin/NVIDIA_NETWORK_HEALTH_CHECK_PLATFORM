@@ -34,8 +34,22 @@ class HcaService:
         self._df = None
         self._topology = None
 
-    def run(self) -> List[Dict[str, object]]:
+    def run(self, return_only_issues: bool = False) -> List[Dict[str, object]]:
         df = self._load_dataframe()
+
+        # Filter to only issues if requested
+        if return_only_issues:
+            # Keep rows with compliance issues (PSID non-compliant OR FW non-compliant OR recently rebooted)
+            mask = (
+                ~df["PSID_Compliant"].fillna(True) |
+                ~df["FW_Compliant"].fillna(True) |
+                df["RecentlyRebooted"].fillna(False)
+            )
+            df_filtered = df[mask]
+            if not df_filtered.empty:
+                logger.info(f"HCA: filtered {len(df)} rows to {len(df_filtered)} issues")
+            return df_filtered.to_dict(orient="records")
+
         return df.to_dict(orient="records")
 
     def build_anomalies(self) -> pd.DataFrame:

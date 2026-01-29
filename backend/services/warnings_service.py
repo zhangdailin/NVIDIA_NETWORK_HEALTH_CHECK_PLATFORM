@@ -192,9 +192,13 @@ class WarningsService:
         self._topology: Optional[TopologyLookup] = None
         self._analysis_cache: Optional[WarningsAnalysis] = None
 
-    def run(self) -> WarningsAnalysis:
-        """Run the warnings analysis (cached)."""
-        if self._analysis_cache is not None:
+    def run(self, return_only_issues: bool = False) -> WarningsAnalysis:
+        """Run the warnings analysis (cached).
+
+        Args:
+            return_only_issues: If True, filter to only critical/warning severity warnings
+        """
+        if self._analysis_cache is not None and not return_only_issues:
             return self._analysis_cache
 
         all_warnings: List[WarningItem] = []
@@ -221,14 +225,30 @@ class WarningsService:
         pci_summary = self._build_pci_summary()
         counters_summary = self._build_counters_summary()
 
-        self._analysis_cache = WarningsAnalysis(
-            warnings=all_warnings,
-            summary=summary,
+        # Cache the full results
+        if not return_only_issues:
+            self._analysis_cache = WarningsAnalysis(
+                warnings=all_warnings,
+                summary=summary,
+                firmware_summary=firmware_summary,
+                pci_summary=pci_summary,
+                counters_summary=counters_summary,
+            )
+            return self._analysis_cache
+
+        # Filter to only critical/warning if requested
+        filtered_warnings = [w for w in all_warnings if w.severity in ("critical", "warning")]
+        if filtered_warnings:
+            logger.info(f"Warnings: filtered {len(all_warnings)} warnings to {len(filtered_warnings)} issues")
+
+        filtered_summary = self._build_summary(filtered_warnings)
+        return WarningsAnalysis(
+            warnings=filtered_warnings,
+            summary=filtered_summary,
             firmware_summary=firmware_summary,
             pci_summary=pci_summary,
             counters_summary=counters_summary,
         )
-        return self._analysis_cache
 
     def _get_index_table(self) -> pd.DataFrame:
         """Get the index table, cached."""

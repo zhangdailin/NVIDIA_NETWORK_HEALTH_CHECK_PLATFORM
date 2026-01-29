@@ -122,7 +122,7 @@ EXPLANATIONS: Dict[str, Explanation] = {
     ),
     ExplanationKey.CONGESTION: Explanation(
         title="PortXmitWait ratio exceeds healthy guidance",
-        why_it_matters="The manual treats 1-5% wait ratio as warning and >5% as severe congestion, indicating sustained backpressure.",
+        why_it_matters="The manual treats 1-5% wait ratio as warning and >5% as critical congestion, indicating sustained backpressure.",
         likely_causes=(
             "Hot-spot traffic concentrated on a subset of uplinks",
             "Unbalanced routing/plain allocation or missing QoS tuning",
@@ -252,7 +252,7 @@ EXPLANATIONS: Dict[str, Explanation] = {
     ),
     ExplanationKey.CONGESTION_XMIT_TIME: Explanation(
         title="PortXmitTimeCong ratio above healthy guidance",
-        why_it_matters="Time spent transmitting under congestion control indicates prolonged backpressure; the manual treats >=1% as warning and >=5% as severe.",
+        why_it_matters="Time spent transmitting under congestion control indicates prolonged backpressure; the manual treats >=1% as warning and >=5% as critical.",
         likely_causes=(
             "Over-subscribed uplinks or insufficient fabric bandwidth",
             "Unbalanced routing causing certain paths to saturate",

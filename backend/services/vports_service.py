@@ -40,7 +40,7 @@ class VPortsService:
         self._index_cache: Optional[pd.DataFrame] = None
         self._topology: Optional[TopologyLookup] = None
 
-    def run(self) -> VPortsResult:
+    def run(self, return_only_issues: bool = False) -> VPortsResult:
         """Run VPorts analysis."""
         vnodes_df = self._try_read_table("VNODES")
         vports_df = self._try_read_table("VPORTS")
@@ -89,10 +89,20 @@ class VPortsService:
         # Build summary
         summary = self._build_summary(records, vnodes_df, vports_df, vnode_counts, vport_counts)
 
-        # Apply configurable row limit
-        # Using adaptive limiter instead of fixed limit
-        limited_records = apply_adaptive_limit(records)
-        return VPortsResult(data=limited_records, anomalies=None, summary=summary)
+        # Filter to only issues if requested
+        if return_only_issues:
+            # VPorts doesn't have explicit issues, so return empty for now
+            # Could add filtering logic based on summary thresholds if needed
+            records_filtered = []
+            if records_filtered:
+                logger.info(f"VPorts: filtered {len(records)} rows to {len(records_filtered)} issues")
+            display_records = apply_adaptive_limit(records_filtered)
+        else:
+            # Apply configurable row limit
+            # Using adaptive limiter instead of fixed limit
+            display_records = apply_adaptive_limit(records)
+
+        return VPortsResult(data=display_records, anomalies=None, summary=summary)
 
     def _build_summary(
         self,

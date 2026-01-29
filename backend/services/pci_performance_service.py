@@ -59,7 +59,7 @@ class PciPerformanceService:
         self._index_cache: Optional[pd.DataFrame] = None
         self._topology: Optional[TopologyLookup] = None
 
-    def run(self) -> PciPerformanceResult:
+    def run(self, return_only_issues: bool = False) -> PciPerformanceResult:
         """Run PCI Performance analysis."""
         p_db1_df = self._try_read_table("P_DB1")
         p_db2_df = self._try_read_table("P_DB2")
@@ -276,6 +276,13 @@ class PciPerformanceService:
                 })
 
         anomalies = pd.DataFrame(anomaly_records) if anomaly_records else None
+
+        # Filter to only issues if requested
+        if return_only_issues:
+            records_filtered = [r for r in records if r["Severity"] in ("critical", "warning")]
+            if records_filtered:
+                logger.info(f"PCI Performance: filtered {len(records)} rows to {len(records_filtered)} issues")
+            return PciPerformanceResult(data=records_filtered, anomalies=anomalies, summary=summary)
 
         return PciPerformanceResult(data=records, anomalies=anomalies, summary=summary)
 

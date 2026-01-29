@@ -51,8 +51,17 @@ class FanService:
         self._df: Optional[pd.DataFrame] = None
         self._topology: Optional[TopologyLookup] = None
 
-    def run(self) -> FanAnalysis:
+    def run(self, return_only_issues: bool = False) -> FanAnalysis:
         df = self._load_dataframe()
+
+        # Filter to only issues if requested
+        if return_only_issues and not df.empty:
+            # Keep rows with fan issues (FanAlert > 0)
+            mask = df["FanAlert"] > 0
+            df = df[mask]
+            if not df.empty:
+                logger.info(f"Fan: filtered to {len(df)} issues")
+
         anomalies = self._build_anomalies(df)
         display_df = self._decorate_dataframe(df)
         records = display_df.to_dict(orient="records") if not display_df.empty else []

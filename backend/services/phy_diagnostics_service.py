@@ -38,7 +38,7 @@ class PhyDiagnosticsService:
         self._index_cache: Optional[pd.DataFrame] = None
         self._topology: Optional[TopologyLookup] = None
 
-    def run(self) -> PhyDiagnosticsResult:
+    def run(self, return_only_issues: bool = False) -> PhyDiagnosticsResult:
         """Run Physical Layer Diagnostics analysis."""
         phy_df = self._try_read_table("PHY_DB1")
 
@@ -84,10 +84,19 @@ class PhyDiagnosticsService:
         # Build summary
         summary = self._build_summary(records, phy_df, field_columns)
 
-        # Apply configurable row limit
-        # Using adaptive limiter instead of fixed limit
-        limited_records = apply_adaptive_limit(records)
-        return PhyDiagnosticsResult(data=limited_records, anomalies=None, summary=summary)
+        # Filter to only issues if requested
+        if return_only_issues:
+            # Keep rows with diagnostic anomalies (NonZeroFields > 0)
+            records_filtered = [r for r in records if r.get("NonZeroFields", 0) > 0]
+            if records_filtered:
+                logger.info(f"PHY Diagnostics: filtered {len(records)} rows to {len(records_filtered)} issues")
+            display_records = apply_adaptive_limit(records_filtered)
+        else:
+            # Apply configurable row limit
+            # Using adaptive limiter instead of fixed limit
+            display_records = apply_adaptive_limit(records)
+
+        return PhyDiagnosticsResult(data=display_records, anomalies=None, summary=summary)
 
     def _build_summary(
         self,

@@ -61,7 +61,7 @@ class MlnxCountersService:
         self._index_cache: Optional[pd.DataFrame] = None
         self._topology: Optional[TopologyLookup] = None
 
-    def run(self) -> MlnxCountersResult:
+    def run(self, return_only_issues: bool = False) -> MlnxCountersResult:
         """Run MLNX counters analysis."""
         mlnx_df = self._try_read_table("MLNX_CNTRS_INFO")
 
@@ -174,6 +174,13 @@ class MlnxCountersService:
             0 if r["Severity"] == "critical" else 1 if r["Severity"] == "warning" else 2,
             -r["TotalErrors"]
         ))
+
+        # Filter to only issues if requested
+        if return_only_issues:
+            records_filtered = [r for r in records if r["Severity"] in ("critical", "warning")]
+            if records_filtered:
+                logger.info(f"MLNX Counters: filtered {len(records)} rows to {len(records_filtered)} issues")
+            return MlnxCountersResult(data=records_filtered, anomalies=anomalies, summary=summary)
 
         return MlnxCountersResult(data=records, anomalies=anomalies, summary=summary)
 

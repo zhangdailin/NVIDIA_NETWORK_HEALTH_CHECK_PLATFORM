@@ -36,7 +36,7 @@ class HistogramService:
                 "total_ports": 0,
                 "high_p99_ports": 0,
                 "upper_bucket_ports": 0,
-                "severe_tail_ports": 0,
+                "critical_tail_ports": 0,
                 "avg_median_us": 0.0,
                 "avg_p99_us": 0.0,
                 "top_outliers": [],
@@ -193,7 +193,7 @@ class HistogramService:
             "total_ports": int(len(df)),
             "high_p99_ports": 0,
             "upper_bucket_ports": 0,
-            "severe_tail_ports": 0,
+            "critical_tail_ports": 0,
             "avg_median_us": 0.0,
             "avg_p99_us": 0.0,
             "top_outliers": [],
@@ -208,7 +208,7 @@ class HistogramService:
 
         summary["high_p99_ports"] = int((ratio >= 3.0).sum())
         summary["upper_bucket_ports"] = int((upper >= 0.1).sum())
-        summary["severe_tail_ports"] = int((ratio >= 5.0).sum())
+        summary["critical_tail_ports"] = int((ratio >= 5.0).sum())
         summary["avg_median_us"] = float(median.mean())
         summary["avg_p99_us"] = float(p99.mean())
 

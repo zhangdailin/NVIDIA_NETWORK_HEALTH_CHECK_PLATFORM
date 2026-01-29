@@ -135,6 +135,22 @@ function UnifiedAnalysisPage({
     )
   }
 
+  // 所有数据健康（有数据但被过滤为空）
+  if (noIssueRows) {
+    return (
+      <div className="osc-empty" style={{ color: '#059669' }}>
+        <CheckCircle size={48} style={{ marginBottom: '16px', opacity: 0.8 }} />
+        <p style={{ fontSize: '18px', fontWeight: '500', margin: '8px 0' }}>✅ 所有设备健康</p>
+        <p style={{ margin: 0, color: '#6b7280' }}>
+          共 {resolvedTotalRows} 项检测项，未发现问题数据
+        </p>
+        <p style={{ margin: '8px 0 0 0', fontSize: '14px', color: '#6b7280' }}>
+          当前显示模式：仅显示问题数据
+        </p>
+      </div>
+    )
+  }
+
   // 构建默认指标卡片
   const displayMetricCards = metricCards.length > 0 ? metricCards : [
     {

@@ -42,7 +42,7 @@ class PowerSensorsService:
         self._index_cache: Optional[pd.DataFrame] = None
         self._topology: Optional[TopologyLookup] = None
 
-    def run(self) -> PowerSensorsResult:
+    def run(self, return_only_issues: bool = False) -> PowerSensorsResult:
         """Run Power Sensors analysis."""
         power_sensors_df = self._try_read_table("POWER_SENSORS")
 
@@ -149,10 +149,18 @@ class PowerSensorsService:
             -r.get("UtilizationPct", 0)
         ))
 
-        # Apply configurable row limit
-        # Using adaptive limiter instead of fixed limit
-        limited_records = apply_adaptive_limit(records)
-        return PowerSensorsResult(data=limited_records, anomalies=None, summary=summary)
+        # Filter to only issues if requested
+        if return_only_issues:
+            records_filtered = [r for r in records if r["Severity"] in ("critical", "warning")]
+            if records_filtered:
+                logger.info(f"Power Sensors: filtered {len(records)} rows to {len(records_filtered)} issues")
+            display_records = apply_adaptive_limit(records_filtered)
+        else:
+            # Apply configurable row limit
+            # Using adaptive limiter instead of fixed limit
+            display_records = apply_adaptive_limit(records)
+
+        return PowerSensorsResult(data=display_records, anomalies=None, summary=summary)
 
     def _try_read_table(self, table_name: str) -> pd.DataFrame:
         try:

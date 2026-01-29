@@ -106,7 +106,7 @@ export const extractSeverityFromRow = (row, severityFields = null) => {
     const value = row?.[field]
     if (value != null) {
       const text = String(value).toLowerCase().trim()
-      if (text === 'critical' || text === 'severe' || text === 'error' || text === 'failed') {
+      if (text === 'critical' || text === 'error' || text === 'failed') {
         return 'critical'
       }
       if (text === 'warning' || text === 'warn' || text === 'alert' || text === 'degraded') {

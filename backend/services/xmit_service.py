@@ -114,15 +114,15 @@ class XmitService:
 
         # Filter to only issues if requested
         if return_only_issues:
-            # Keep rows with congestion level warning or severe
-            df_filtered = df[df["CongestionLevel"].isin(["warning", "severe"])]
-            logger.info("Xmit: filtered %d rows to %d issues (warning/severe)", len(df), len(df_filtered))
+            # Keep rows with congestion level warning or critical
+            df_filtered = df[df["CongestionLevel"].isin(["warning", "critical"])]
+            logger.info("Xmit: filtered %d rows to %d issues (warning/critical)", len(df), len(df_filtered))
 
             # Log sample data for debugging
             if len(df_filtered) > 0:
                 logger.info("Xmit: Sample filtered row: %s", df_filtered.iloc[0].to_dict())
             else:
-                logger.info("Xmit: No warning/severe congestion found. Sample normal row: %s",
+                logger.info("Xmit: No warning/critical congestion found. Sample normal row: %s",
                            df.iloc[0][["NodeGUID", "PortNumber", "WaitRatioPct", "CongestionLevel"]].to_dict() if len(df) > 0 else {})
 
             df = df_filtered
@@ -155,11 +155,11 @@ class XmitService:
         # Fix: Use proper bins to avoid duplicate labels
         # 0 <= x <= 1: normal
         # 1 < x <= 5: warning
-        # x > 5: severe
+        # x > 5: critical
         df["CongestionLevel"] = pd.cut(
             df["WaitRatioPct"],
             bins=[-float('inf'), 1, 5, float('inf')],
-            labels=["normal", "warning", "severe"],
+            labels=["normal", "warning", "critical"],
             include_lowest=True
         ).astype(str)
 
@@ -167,11 +167,11 @@ class XmitService:
         congestion_counts = df["CongestionLevel"].value_counts()
         logger.info(f"Xmit congestion distribution: {congestion_counts.to_dict()}")
 
-        # Count severe and warning
-        severe_count = (df["CongestionLevel"] == "severe").sum()
+        # Count critical and warning
+        critical_count = (df["CongestionLevel"] == "critical").sum()
         warning_count = (df["CongestionLevel"] == "warning").sum()
-        if severe_count > 0:
-            logger.info(f"Xmit: {severe_count} ports with severe congestion")
+        if critical_count > 0:
+            logger.info(f"Xmit: {critical_count} ports with critical congestion")
         if warning_count > 0:
             logger.info(f"Xmit: {warning_count} ports with warning congestion")
 
@@ -244,7 +244,7 @@ class XmitService:
         except (TypeError, ValueError):
             return "unknown"
         if val >= 5:
-            return "severe"
+            return "critical"
         if val >= 1:
             return "warning"
         if val >= 0:
@@ -418,7 +418,7 @@ class XmitService:
     def _build_summary(self, df: pd.DataFrame) -> Dict[str, object]:
         summary = {
             "total_ports": int(len(df)),
-            "severe_ports": 0,
+            "critical_ports": 0,
             "warning_ports": 0,
             "fecn_ports": 0,
             "becn_ports": 0,
@@ -439,14 +439,14 @@ class XmitService:
         congestion_series = _numeric_series("XmitCongestionPct")
         wait_seconds = _numeric_series("WaitSeconds")
 
-        severe_mask = (ratio_series >= 5.0) | (congestion_series >= 5.0)
-        warning_mask = (~severe_mask) & (
+        critical_mask = (ratio_series >= 5.0) | (congestion_series >= 5.0)
+        warning_mask = (~critical_mask) & (
             (ratio_series >= 1.0)
             | (congestion_series >= 1.0)
             | (wait_seconds > 0.0)
         )
 
-        summary["severe_ports"] = int(severe_mask.sum())
+        summary["critical_ports"] = int(critical_mask.sum())
         summary["warning_ports"] = int(warning_mask.sum())
         summary["avg_wait_ratio_pct"] = float(ratio_series.mean())
         summary["max_wait_ratio_pct"] = float(ratio_series.max())

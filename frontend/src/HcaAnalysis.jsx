@@ -13,6 +13,16 @@ function HcaAnalysis({ hcaData, firmwareWarnings = [], pciWarnings = [], summary
   const fwWarnings = ensureArray(firmwareWarnings)
   const pciWarns = ensureArray(pciWarnings)
 
+  // 空数据检查
+  if (rows.length === 0) {
+    return (
+      <div style={{ padding: '40px', textAlign: 'center', color: '#666' }}>
+        <Cpu size={48} style={{ marginBottom: '16px', opacity: 0.5 }} />
+        <p>暂无 HCA 分析数据</p>
+      </div>
+    )
+  }
+
   // 定义严重度判断逻辑
   const getSeverity = (row) => {
     const severity = String(row.Severity || '').toLowerCase()

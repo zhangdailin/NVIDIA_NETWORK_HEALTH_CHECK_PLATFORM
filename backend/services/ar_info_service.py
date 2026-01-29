@@ -37,7 +37,7 @@ class ArInfoService:
         self._index_cache: Optional[pd.DataFrame] = None
         self._topology: Optional[TopologyLookup] = None
 
-    def run(self) -> ArInfoResult:
+    def run(self, return_only_issues: bool = False) -> ArInfoResult:
         """Run AR Info analysis."""
         ar_df = self._try_read_table("AR_INFO")
 

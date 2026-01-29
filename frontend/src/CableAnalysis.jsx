@@ -3,6 +3,16 @@ import UnifiedAnalysisPage from './UnifiedAnalysisPage'
 import { toNumber, hasAlarmFlag } from './analysisUtils'
 
 function CableAnalysis({ cableData, summary, totalRows }) {
+  // 空数据检查
+  if (!cableData || cableData.length === 0) {
+    return (
+      <div style={{ padding: '40px', textAlign: 'center', color: '#666' }}>
+        <Cable size={48} style={{ marginBottom: '16px', opacity: 0.5 }} />
+        <p>暂无线缆分析数据</p>
+      </div>
+    )
+  }
+
   // 定义严重度判断逻辑
   const getSeverity = (row) => {
     // 优先使用后端返回的 Severity 字段

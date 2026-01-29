@@ -44,7 +44,7 @@ class BufferHistogramService:
         self._index_cache: Optional[pd.DataFrame] = None
         self._topology: Optional[TopologyLookup] = None
 
-    def run(self) -> BufferHistogramResult:
+    def run(self, return_only_issues: bool = False) -> BufferHistogramResult:
         """Run Buffer Histogram analysis."""
         buffer_data_df = self._try_read_table("PERFORMANCE_HISTOGRAM_BUFFER_DATA")
         buffer_control_df = self._try_read_table("PERFORMANCE_HISTOGRAM_BUFFER_CONTROL")
@@ -172,10 +172,18 @@ class BufferHistogramService:
             -r.get("HighBinPct", 0)
         ))
 
-        # Apply configurable row limit
-        # Using adaptive limiter instead of fixed limit
-        limited_records = apply_adaptive_limit(records)
-        return BufferHistogramResult(data=limited_records, anomalies=None, summary=summary)
+        # Filter to only issues if requested
+        if return_only_issues:
+            records_filtered = [r for r in records if r["Severity"] in ("critical", "warning")]
+            if records_filtered:
+                logger.info(f"Buffer Histogram: filtered {len(records)} rows to {len(records_filtered)} issues")
+            display_records = apply_adaptive_limit(records_filtered)
+        else:
+            # Apply configurable row limit
+            # Using adaptive limiter instead of fixed limit
+            display_records = apply_adaptive_limit(records)
+
+        return BufferHistogramResult(data=display_records, anomalies=None, summary=summary)
 
     def _try_read_table(self, table_name: str) -> pd.DataFrame:
         try:

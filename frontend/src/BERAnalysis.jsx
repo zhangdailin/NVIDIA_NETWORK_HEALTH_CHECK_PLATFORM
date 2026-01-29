@@ -55,6 +55,16 @@ const pickFormattedBer = (directCandidates = [], numericCandidates = [], logCand
 function BERAnalysis({ berData = [], showOnlyProblematic = false, totalRows }) {
   const rows = ensureArray(berData)
 
+  // 空数据检查
+  if (rows.length === 0) {
+    return (
+      <div style={{ padding: '40px', textAlign: 'center', color: '#666' }}>
+        <Shield size={48} style={{ marginBottom: '16px', opacity: 0.5 }} />
+        <p>暂无 BER 分析数据</p>
+      </div>
+    )
+  }
+
   // 定义严重度判断逻辑
   const getSeverity = (row) => {
     const severity = String(row.SymbolBERSeverity || row.Severity || '').toLowerCase()

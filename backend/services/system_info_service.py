@@ -39,7 +39,7 @@ class SystemInfoService:
         self._index_cache: Optional[pd.DataFrame] = None
         self._topology: Optional[TopologyLookup] = None
 
-    def run(self) -> SystemInfoResult:
+    def run(self, return_only_issues: bool = False) -> SystemInfoResult:
         """Run System Info analysis."""
         sys_df = self._try_read_table("SYSTEM_GENERAL_INFORMATION")
         run_df = self._try_read_table("RUN_INFO")

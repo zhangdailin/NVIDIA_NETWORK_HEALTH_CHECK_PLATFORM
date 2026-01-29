@@ -558,6 +558,10 @@ class AnalysisService:
         warnings_by_category = warnings_analysis.get("by_category", {})
         warnings_summary = warnings_analysis.get("summary", {})
 
+        # Extract firmware and PCI warnings for HCA tab
+        firmware_warnings = warnings_by_category.get("firmware", [])
+        pci_warnings = warnings_by_category.get("pci", [])
+
         def preview_full(name: str) -> List[Dict[str, object]]:
             return self._preview_records(datasets.get(name, []))
 
@@ -600,6 +604,8 @@ class AnalysisService:
             "n2n_security_summary": n2n_security_summary,
             "warnings_by_category": warnings_by_category,
             "warnings_summary": warnings_summary,
+            "firmware_warnings": firmware_warnings,
+            "pci_warnings": pci_warnings,
             "debug_stdout": brief_payload.get("debug_stdout", ""),
             "debug_stderr": brief_payload.get("debug_stderr", ""),
             "preview_row_limit": MAX_PREVIEW_ROWS,
